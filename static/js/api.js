@@ -97,7 +97,7 @@ const API = {
     if (this._preloadCache[date]) return;
     this._preloadingDates.add(date);
     try {
-      const [now, air, hourly, sg, astro, mm, ana] = await Promise.allSettled([
+      const [now, air, hourly, sg, astro, mm, ana, hist] = await Promise.allSettled([
         this.now(date),
         this.airQuality(date),
         this.hourly(date),
@@ -105,8 +105,9 @@ const API = {
         this.astronomy(date),
         this.multimodel(date),
         this.analysis(date),
+        this.historical(date),
       ]);
-      this._preloadCache[date] = { now, air, hourly, sg, astro, mm, ana };
+      this._preloadCache[date] = { now, air, hourly, sg, astro, mm, ana, hist };
     } finally {
       this._preloadingDates.delete(date);
     }
@@ -121,5 +122,6 @@ const API = {
   clearPreloadCache() {
     this._preloadCache = {};
     this._preloadingDates.clear();
+    this._forecastData = null;  // forecast 数据也需要清除（城市变化）
   },
 };
