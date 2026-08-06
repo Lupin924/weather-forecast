@@ -62,7 +62,7 @@
   // 并发拉取所有端点，各分区独立渲染（单点失败不影响其它）
   async function loadAll() {
     startLoading();
-    
+
     setCardLoading('nowCard', true);
     setCardLoading('astroCard', true);
     setCardLoading('airCard', true);
@@ -73,29 +73,42 @@
     setCardLoading('historicalCard', true);
     setCardLoading('analysisCard', true);
 
+    // 检查预缓存：如果当前日期已预缓存，直接使用缓存数据
+    const cached = API.getCachedData(API.date);
+
     const tasks = [
-      { key: 'now', fn: () => API.now(), render: r => { renderNow(r.data); setCardLoading('nowCard', false); }, cardId: 'nowCard' },
-      { key: 'astro', fn: () => API.astronomy(), render: r => { renderAstronomy(r.data); setCardLoading('astroCard', false); }, cardId: 'astroCard' },
-      { key: 'air', fn: () => API.airQuality(), render: r => { renderAirQuality(r.data); setCardLoading('airCard', false); }, cardId: 'airCard' },
+      { key: 'now', fn: () => cached ? cached.now : API.now(), render: r => { renderNow(r.data); setCardLoading('nowCard', false); }, cardId: 'nowCard' },
+      { key: 'astro', fn: () => cached ? cached.astro : API.astronomy(), render: r => { renderAstronomy(r.data); setCardLoading('astroCard', false); }, cardId: 'astroCard' },
+      { key: 'air', fn: () => cached ? cached.air : API.airQuality(), render: r => { renderAirQuality(r.data); setCardLoading('airCard', false); }, cardId: 'airCard' },
       { key: 'forecast', fn: () => API.forecast(), render: r => { renderForecast(r.data); setCardLoading('forecastCard', false); }, cardId: 'forecastCard' },
-      { key: 'hourly', fn: () => API.hourly(), render: r => { renderHourly(r.data, r.meta.sources); setCardLoading('hourlyCard', false); }, cardId: 'hourlyCard' },
-      { key: 'sg', fn: () => API.stargazing(), render: r => { renderStargazing(r.data); setCardLoading('stargazingCard', false); }, cardId: 'stargazingCard' },
-      { key: 'mm', fn: () => API.multimodel(), render: r => { renderMultimodel(r.data); setCardLoading('multimodelCard', false); }, cardId: 'multimodelCard' },
+      { key: 'hourly', fn: () => cached ? cached.hourly : API.hourly(), render: r => { renderHourly(r.data, r.meta.sources); setCardLoading('hourlyCard', false); }, cardId: 'hourlyCard' },
+      { key: 'sg', fn: () => cached ? cached.sg : API.stargazing(), render: r => { renderStargazing(r.data); setCardLoading('stargazingCard', false); }, cardId: 'stargazingCard' },
+      { key: 'mm', fn: () => cached ? cached.mm : API.multimodel(), render: r => { renderMultimodel(r.data); setCardLoading('multimodelCard', false); }, cardId: 'multimodelCard' },
       { key: 'hist', fn: () => API.historical(), render: r => { Charts.historical(r.data.years); setCardLoading('historicalCard', false); }, cardId: 'historicalCard' },
-      { key: 'ana', fn: () => API.analysis(), render: r => { renderAnalysis(r.data); setCardLoading('analysisCard', false); }, cardId: 'analysisCard' },
+      { key: 'ana', fn: () => cached ? cached.ana : API.analysis(), render: r => { renderAnalysis(r.data); setCardLoading('analysisCard', false); }, cardId: 'analysisCard' },
     ];
 
-    const results = await Promise.allSettled(tasks.map(t => t.fn()));
+    // 如果有缓存，直接用 Promise.resolve 包装；否则发网络请求
+    const results = await Promise.allSettled(tasks.map(t => {
+      const val = t.fn();
+      // 预缓存数据是 PromiseSettledResult 对象，需要解包
+      if (val && typeof val.status === 'string') {
+        return val.status === 'fulfilled' ? Promise.resolve(val.value) : Promise.reject(val.reason);
+      }
+      // 正常的 Promise
+      if (val && typeof val.then === 'function') return val;
+      return Promise.resolve(val);
+    }));
     let okCount = 0;
     let failCount = 0;
-    
+
     results.forEach((res, i) => {
       if (res.status === 'fulfilled') {
-        try { 
-          tasks[i].render(res.value); 
-          okCount++; 
-        } catch (e) { 
-          console.error(tasks[i].key, e); 
+        try {
+          tasks[i].render(res.value);
+          okCount++;
+        } catch (e) {
+          console.error(tasks[i].key, e);
           setCardLoading(tasks[i].cardId, false);
         }
       } else {
@@ -105,15 +118,30 @@
       }
       taskCompleted();
     });
-    
+
     setUpdatedAt();
-    
+
     // 提示部分数据缺失
     if (failCount > 0 && failCount < tasks.length) {
       toast(`部分数据加载失败 (${failCount}/${tasks.length})，已显示可用数据`);
     } else if (okCount === 0) {
       showNoData('所有数据源加载失败，请检查网络或后端服务');
     }
+
+    // 后台预缓存未来 2 天数据（不阻塞 UI）
+    preloadFutureDates();
+  }
+
+  // 预缓存未来 2 天数据
+  function preloadFutureDates() {
+    const now = new Date();
+    const dates = [];
+    for (let n = 1; n <= 2; n++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + n);
+      const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      dates.push(ds);
+    }
+    dates.forEach(d => API.preloadDate(d));
   }
 
   // 仅刷新实况（定时）
@@ -278,13 +306,15 @@
   function selectCityFromSearch(cityData) {
     API.custom = null;
     $('customPanel').classList.add('hidden');
-    
+
     // 记录当前城市名称
     API.currentCity = cityData.name;
-    
+    // 清除预缓存（城市已变更）
+    API.clearPreloadCache();
+
     // 清空下拉选择（互锁）
     $('citySelect').value = '';
-    
+
     // 预设城市直接使用 id
     if (cityData.id && !cityData.id.startsWith('cma_')) {
       API.cityId = cityData.id;
@@ -292,7 +322,7 @@
       loadAll();
       return;
     }
-    
+
     // CMA 城市，使用坐标
     API.cityId = cityData.id || 'custom';
     API.custom = {
@@ -346,6 +376,7 @@
       if (e.target.value) {
         API.cityId = e.target.value;
         API.custom = null;
+        API.clearPreloadCache();
         $('customPanel').classList.add('hidden');
         
         // 记录城市名称
@@ -368,6 +399,17 @@
       loadAll();
     });
 
+    // 预报卡日期点击（前 3 天可点击）
+    $('forecastBody').addEventListener('click', (e) => {
+      const dayCard = e.target.closest('.day-card.clickable');
+      if (!dayCard) return;
+      const d = dayCard.dataset.date;
+      if (!d || d === API.date) return;
+      API.date = d;
+      $('datePicker').value = d;
+      loadAll();
+    });
+
     // 刷新按钮
     $('refreshBtn').addEventListener('click', () => {
       toast('正在刷新…');
@@ -386,6 +428,7 @@
       if (isNaN(lat) || isNaN(lon)) { toast('请输入有效经纬度'); return; }
       API.custom = { lat, lon, elev, label: '自定义(' + lat + ',' + lon + ')' };
       API.cityId = 'custom';
+      API.clearPreloadCache();
       toast('已切换到自定义坐标');
       loadAll();
     });

@@ -42,29 +42,50 @@ function windDirText(deg) {
 function renderNow(data) {
   const el = document.getElementById('nowBody');
   const card = document.getElementById('nowCard');
-  
+
   // 获取当前城市名称
   const cityName = (typeof API !== 'undefined' && API.currentCity) ? API.currentCity : '';
-  
-  if (!data) { 
-    el.className = 'placeholder'; 
-    el.innerHTML = (cityName ? '<div class="city-name">📍 ' + cityName + '</div>' : '') + 
-      '⚠️ 暂无实况数据，该城市可能不在 CMA 覆盖范围内'; 
+
+  if (!data) {
+    el.className = 'placeholder';
+    el.innerHTML = (cityName ? '<div class="city-name">📍 ' + cityName + '</div>' : '') +
+      '⚠️ 暂无实况数据，该城市可能不在 CMA 覆盖范围内';
     card.classList.add('no-data');
-    return; 
+    return;
   }
   card.classList.remove('no-data');
+
+  // 预报模式 / 不可用模式
+  if (data.mode === 'unavailable') {
+    el.className = 'placeholder';
+    el.innerHTML = (cityName ? '<div class="city-name">📍 ' + cityName + '</div>' : '') +
+      '<div class="no-data-hint">📅 ' + (data.message || '该日期暂无实况数据') + '</div>' +
+      '<div class="meta-row">点击预报卡前 3 天日期可查看预报详情</div>';
+    return;
+  }
+
   const d = data;
+  const mode = d.mode || 'realtime';
+  const isForecast = mode === 'forecast';
+  const modeBadge = isForecast ? '<span class="mode-badge forecast-badge">🔮 预报模式</span>' : '';
   const alarmsHtml = (d.alarms || []).map((a, idx) => {
     const sev = a.severity || 'BLUE';
     // 添加 animate-once 类实现一次性入场动画，避免持续闪烁
     return `<span class="alarm-badge alarm-${sev} animate-once" style="animation-delay:${idx * 0.1}s">⚠️ ${a.title || a.signaltype || ''}</span>`;
   }).join('');
   el.className = '';
+  const lastUpdateText = isForecast && d.last_update
+    ? d.last_update.slice(11, 16) + ' 预报值'
+    : safe(d.last_update);
+  const sourceText = isForecast ? 'Open-Meteo预报' : 'CMA';
+  // 预报模式显示最高/最低气温，实况模式显示当前温度
+  const tempDisplay = isForecast && d.temperature_max != null && d.temperature_min != null
+    ? `<span class="d-high">${safe(d.temperature_max, '°')}</span> / <span class="d-low">${safe(d.temperature_min, '°')}</span>`
+    : `${safe(d.temperature, '°C')}`;
   el.innerHTML = `
-    ${cityName ? '<div class="city-name">📍 ' + cityName + '</div>' : ''}
+    ${cityName ? '<div class="city-name">📍 ' + cityName + modeBadge + '</div>' : (modeBadge ? '<div>' + modeBadge + '</div>' : '')}
     <div class="now-main">
-      <div class="now-temp">${safe(d.temperature, '°C')}</div>
+      <div class="now-temp">${tempDisplay}</div>
       <div>
         <div class="now-feels">体感 ${safe(d.feels_like, '°C')}</div>
         <div class="now-feels">${d.wind_direction || windDirText(d.wind_direction_degree)} ${safe(d.wind_scale) || safe(d.wind_speed, 'm/s')}</div>
@@ -76,7 +97,7 @@ function renderNow(data) {
       <div class="now-item"><div class="label">降水</div><div class="value">${safe(d.precipitation, ' mm')}</div></div>
     </div>
     <div class="alarms">${alarmsHtml}</div>
-    <div class="meta-row">更新: ${safe(d.last_update)} · 来源: CMA</div>
+    <div class="meta-row">更新: ${lastUpdateText} · 来源: ${sourceText}</div>
   `;
 }
 
@@ -142,18 +163,52 @@ function renderAstronomy(data) {
 function renderAirQuality(data) {
   const el = document.getElementById('airBody');
   const card = document.getElementById('airCard');
-  if (!data) { 
-    el.className = 'placeholder'; 
-    el.textContent = '⚠️ 暂无空气质量数据'; 
+  if (!data) {
+    el.className = 'placeholder';
+    el.textContent = '⚠️ 暂无空气质量数据';
     card.classList.add('no-data');
-    return; 
+    return;
   }
   card.classList.remove('no-data');
-  
-  const current = data.current || {};
-  const aqi = current.aqi;
+
   const lightPollution = data.light_pollution || {};
-  
+
+  // 判断是否为预报模式（未来日期）— 使用本地日期避免 UTC 偏移
+  const _now = new Date();
+  const todayStr = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0') + '-' + String(_now.getDate()).padStart(2, '0');
+  const targetDate = (typeof API !== 'undefined' && API.date) ? API.date : todayStr;
+  const isForecast = targetDate !== todayStr;
+
+  // 从 hourly 中选取目标日期同时刻代表值
+  let aqi = null, pm2_5 = null, pm10 = null, repHour = null;
+  if (isForecast && data.hourly && data.hourly.time) {
+    const times = data.hourly.time;
+    const currentHour = new Date().getHours();
+    let bestDiff = 99;
+    for (let i = 0; i < times.length; i++) {
+      if (!times[i].startsWith(targetDate)) continue;
+      try {
+        const h = parseInt(times[i].slice(11, 13));
+        const d = Math.abs(h - currentHour);
+        if (d < bestDiff) {
+          bestDiff = d;
+          aqi = data.hourly.aqi[i];
+          pm2_5 = data.hourly.pm2_5 ? data.hourly.pm2_5[i] : null;
+          pm10 = data.hourly.pm10 ? data.hourly.pm10[i] : null;
+          repHour = h;
+        }
+      } catch (e) { /* skip */ }
+    }
+  } else {
+    const current = data.current || {};
+    aqi = current.aqi;
+    pm2_5 = current.pm2_5;
+    pm10 = current.pm10;
+  }
+
+  // 预报模式下无数据
+  const noAqiData = isForecast && aqi == null;
+
   // AQI 等级
   let aqiClass = 'aqi-good';
   let aqiText = '优';
@@ -163,7 +218,7 @@ function renderAirQuality(data) {
     else if (aqi <= 150) { aqiClass = 'aqi-unhealthy'; aqiText = '轻度污染'; }
     else { aqiClass = 'aqi-hazardous'; aqiText = '中重度污染'; }
   }
-  
+
   // 光污染等级（基于 Bortle 暗空分类 1-9 级）
   const bortle = lightPollution.bortle;
   const lpName = lightPollution.label || '未知';
@@ -182,30 +237,41 @@ function renderAirQuality(data) {
     else lpClass = 'lp-severe';
   }
 
+  const modeBadge = isForecast && !noAqiData
+    ? `<span class="mode-badge forecast-badge">🔮 预报 ${String(repHour).padStart(2,'0')}:00</span>`
+    : '';
+  const aqiDisplay = noAqiData
+    ? `<div class="aqi-big aqi-good" style="opacity:0.5">—<div style="font-size:12px;margin-top:4px;">超出3天范围</div></div>`
+    : `<div class="aqi-big ${aqiClass}">${aqi != null ? aqi : '—'}<div style="font-size:14px;margin-top:4px;">${aqiText}</div></div>`;
+  const pollutantRow = noAqiData
+    ? `<div style="font-size:12px;color:var(--text-dim);padding:8px 0;">该日期超出空气质量预报范围（最多3天）</div>`
+    : `<div class="air-items">
+        <div class="now-item"><div class="label">PM2.5</div><div class="value">${safe(pm2_5, ' μg/m³')}</div></div>
+        <div class="now-item"><div class="label">PM10</div><div class="value">${safe(pm10, ' μg/m³')}</div></div>
+        ${isForecast
+          ? '<div class="now-item"><div class="label">O₃</div><div class="value">—</div></div><div class="now-item"><div class="label">NO₂</div><div class="value">—</div></div>'
+          : `<div class="now-item"><div class="label">O₃</div><div class="value">${safe((data.current||{}).ozone, ' μg/m³')}</div></div>
+             <div class="now-item"><div class="label">NO₂</div><div class="value">${safe((data.current||{}).nitrogen_dioxide, ' μg/m³')}</div></div>`
+        }
+      </div>`;
+
   el.className = '';
   el.innerHTML = `
     <div class="air-main">
-      <div class="aqi-big ${aqiClass}">
-        ${aqi != null ? aqi : '—'}
-        <div style="font-size:14px;margin-top:4px;">${aqiText}</div>
-      </div>
+      ${aqiDisplay}
       <div>
+        ${modeBadge ? '<div style="margin-bottom:6px;">' + modeBadge + '</div>' : ''}
         <div style="margin-bottom:6px;">
           <span class="light-pollution-badge ${lpClass}">💡 Bortle ${bortle != null ? bortle : '?'}级 · ${lpName}</span>
           ${lpSqm != null ? `<span style="font-size:12px;color:var(--text-dim);margin-left:8px;">SQM ${lpSqm}</span>` : ''}
         </div>
         ${lpMilkyWay ? `<div style="font-size:12px;color:var(--text-dim);margin-bottom:4px;">🌌 ${lpMilkyWay}</div>` : ''}
         ${lpMethod ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">${lpMethod}</div>` : ''}
-        <div class="air-items">
-          <div class="now-item"><div class="label">PM2.5</div><div class="value">${safe(current.pm2_5, ' μg/m³')}</div></div>
-          <div class="now-item"><div class="label">PM10</div><div class="value">${safe(current.pm10, ' μg/m³')}</div></div>
-          <div class="now-item"><div class="label">O₃</div><div class="value">${safe(current.ozone, ' μg/m³')}</div></div>
-          <div class="now-item"><div class="label">NO₂</div><div class="value">${safe(current.nitrogen_dioxide, ' μg/m³')}</div></div>
-        </div>
+        ${pollutantRow}
       </div>
     </div>
     <div class="meta-row">
-      ${lpDataSource ? '光污染: ' + lpDataSource + ' · ' : ''}空气质量: Open-Meteo Air Quality API
+      ${lpDataSource ? '光污染: ' + lpDataSource + ' · ' : ''}空气质量: ${isForecast ? 'Open-Meteo 预报' : 'Open-Meteo Air Quality API'}
     </div>
     ${data._error ? '<div style="color:var(--orange);font-size:12px;margin-top:4px;">⚠️ 部分数据获取失败，显示估算值</div>' : ''}
   `;
@@ -215,19 +281,35 @@ function renderAirQuality(data) {
 function renderForecast(daily) {
   const el = document.getElementById('forecastBody');
   const card = document.querySelector('#forecastBody').closest('.card');
-  if (!daily || !daily.length) { 
-    el.className = 'forecast-strip placeholder'; 
-    el.textContent = '⚠️ 暂无预报数据'; 
+  if (!daily || !daily.length) {
+    el.className = 'forecast-strip placeholder';
+    el.textContent = '⚠️ 暂无预报数据';
     card.classList.add('no-data');
-    return; 
+    return;
   }
   card.classList.remove('no-data');
-  const today = new Date().toISOString().slice(0, 10);
+  // 使用本地日期避免 toISOString 的 UTC 偏移
+  const now = new Date();
+  const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  // 计算前 3 天可点击日期（今天 + 未来 2 天）
+  const clickable = new Set();
+  for (let n = 0; n < 3; n++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + n);
+    const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    clickable.add(ds);
+  }
+  const selectedDate = (typeof API !== 'undefined' && API.date) ? API.date : today;
   el.className = 'forecast-strip';
   el.innerHTML = daily.map(d => {
     const isToday = d.date === today;
+    const isSelected = d.date === selectedDate;
+    const isClickable = clickable.has(d.date);
+    const cls = ['day-card'];
+    if (isToday) cls.push('today');
+    if (isSelected) cls.push('selected');
+    if (isClickable) cls.push('clickable'); else cls.push('disabled');
     const icon = weatherIcon(null, d.day_text);
-    return `<div class="day-card ${isToday ? 'today' : ''}">
+    return `<div class="${cls.join(' ')}" data-date="${d.date}">
       <div class="d-date">${d.date.slice(5)}</div>
       <div class="d-icon">${icon}</div>
       <div class="d-temp"><span class="d-high">${safe(d.high,'°')}</span> / <span class="d-low">${safe(d.low,'°')}</span></div>

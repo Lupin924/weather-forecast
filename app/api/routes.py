@@ -232,15 +232,101 @@ async def weather_now(
     lon: Optional[float] = Query(None),
     elevation: Optional[int] = Query(None),
     station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
+    date: Optional[str] = Query(None, description="YYYY-MM-DD，默认今天"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
+    target = date or _today_str()
+    today = _today_str()
     sources, stale = [], False
 
+    # 未来日期：从 Open-Meteo 预报中取同时刻数据
+    if target > today:
+        try:
+            from datetime import datetime as _dt
+            diff = (_dt.fromisoformat(target) - _dt.fromisoformat(today)).days
+        except Exception:
+            diff = 99
+        if diff > 3:
+            data = {"mode": "unavailable", "message": "该日期超出 3 天预报范围，暂无实况数据"}
+            return _envelope(city, data, [], "低")
+        # 取目标日同时刻预报
+        try:
+            fc = await open_meteo.get_forecast(
+                city.latitude, city.longitude, city.elevation_m, forecast_days=16
+            )
+            hourly = fc.get("hourly", [])
+            current_hour = datetime.now().hour
+            now_pt = None
+            best_diff = 99
+            for p in hourly:
+                t = p.get("time", "")
+                if not t.startswith(target):
+                    continue
+                try:
+                    h = int(t[11:13])
+                except Exception:
+                    continue
+                d = abs(h - current_hour)
+                if d < best_diff:
+                    best_diff = d
+                    now_pt = p
+            if now_pt is None:
+                # 取目标日第一个点
+                now_pt = next((p for p in hourly if p.get("time", "").startswith(target)), {})
+            # 优先从 CMA 预报取最高/最低气温（与预报卡片数据源一致）
+            temp_max = None
+            temp_min = None
+            if city.cma_station_id:
+                try:
+                    cma_raw = await cma.get_weather(city.cma_station_id)
+                    for d in cma_raw.get("daily", []):
+                        if d.get("date", "").replace("/", "-") == target:
+                            temp_max = d.get("high")
+                            temp_min = d.get("low")
+                            break
+                except Exception:
+                    pass
+            # CMA 无数据时回退到 Open-Meteo daily
+            if temp_max is None or temp_min is None:
+                daily = fc.get("daily", [])
+                day_pt = next((d for d in daily if d.get("time", "") == target), {})
+                if temp_max is None:
+                    temp_max = day_pt.get("temperature_2m_max")
+                if temp_min is None:
+                    temp_min = day_pt.get("temperature_2m_min")
+            data = {
+                "mode": "forecast",
+                "temperature": now_pt.get("temperature_2m"),
+                "temperature_max": temp_max,
+                "temperature_min": temp_min,
+                "feels_like": now_pt.get("apparent_temperature"),
+                "pressure": now_pt.get("surface_pressure"),
+                "humidity": now_pt.get("relative_humidity_2m"),
+                "wind_direction": "",
+                "wind_direction_degree": now_pt.get("wind_direction_10m"),
+                "wind_speed": (now_pt.get("wind_speed_10m") or 0) / 3.6,  # km/h -> m/s
+                "wind_scale": "",
+                "precipitation": now_pt.get("precipitation"),
+                "alarms": [],
+                "last_update": now_pt.get("time", ""),
+            }
+            sources.append("Open-Meteo预报")
+        except Exception as e:
+            raise HTTPException(502, f"预报数据获取失败: {e}")
+        return _envelope(city, data, sources, "中")
+
+    # 过去日期
+    if target < today:
+        data = {"mode": "unavailable", "message": "无法查看历史实况数据，请选择今天或未来 3 天"}
+        return _envelope(city, data, [], "低")
+
+    # 今天：走现有实况逻辑
     if city.cma_station_id:
         try:
             raw = await cma.get_now(city.cma_station_id)
             now = raw.get("now", {})
             data = {
+                "mode": "realtime",
                 "temperature": now.get("temperature"),
                 "feels_like": now.get("feelst"),
                 "pressure": now.get("pressure"),
@@ -269,6 +355,7 @@ async def weather_now(
             hourly = fc.get("hourly", [])
             now_pt = hourly[0] if hourly else {}
             data = {
+                "mode": "realtime",
                 "temperature": now_pt.get("temperature_2m"),
                 "feels_like": now_pt.get("apparent_temperature"),
                 "pressure": now_pt.get("surface_pressure"),
@@ -540,10 +627,11 @@ async def get_air_quality_endpoint(
     lon: Optional[float] = Query(None),
     elevation: Optional[int] = Query(None),
     station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
+    date: Optional[str] = Query(None, description="YYYY-MM-DD，默认今天"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     try:
-        data = await air_quality.get_air_quality(city.latitude, city.longitude, city.elevation_m)
+        data = await air_quality.get_air_quality(city.latitude, city.longitude, city.elevation_m, target_date=date)
     except Exception as e:
         raise HTTPException(502, f"空气质量数据获取失败: {e}")
     return _envelope(city, data, ["Open-Meteo-AirQuality"], "中")

@@ -18,12 +18,13 @@ from ..config import (
 from . import cache, light_pollution
 
 
-async def get_air_quality(lat: float, lon: float, elevation: int = 0) -> dict[str, Any]:
+async def get_air_quality(lat: float, lon: float, elevation: int = 0, target_date: Optional[str] = None) -> dict[str, Any]:
     """获取当前空气质量数据 + 光污染数据。
 
     空气质量来自 Open-Meteo API，光污染来自本地 Bortle 等级数据库。
+    支持 3 天预报（forecast_days=3），前端按 target_date 筛选。
     """
-    key = f"air_quality_{lat:.2f}_{lon:.2f}_{elevation}"
+    key = f"air_quality_{lat:.2f}_{lon:.2f}_{elevation}_3d"
     cached, stale = cache.get_cache(key, CACHE_TTL["air_quality"])
     if cached is not None and not stale:
         return cached
@@ -38,7 +39,7 @@ async def get_air_quality(lat: float, lon: float, elevation: int = 0) -> dict[st
             f"&current=european_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,"
             f"sulphur_dioxide,ozone"
             f"&hourly=european_aqi,pm2_5,pm10"
-            f"&forecast_days=1"
+            f"&forecast_days=3"
         )
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             resp = await client.get(url)
@@ -61,10 +62,10 @@ async def get_air_quality(lat: float, lon: float, elevation: int = 0) -> dict[st
                 "ozone": current.get("ozone"),
             },
             "hourly": {
-                "time": hourly.get("time", [])[:24],
-                "aqi": hourly.get("european_aqi", [])[:24],
-                "pm2_5": hourly.get("pm2_5", [])[:24],
-                "pm10": hourly.get("pm10", [])[:24],
+                "time": hourly.get("time", [])[:72],
+                "aqi": hourly.get("european_aqi", [])[:72],
+                "pm2_5": hourly.get("pm2_5", [])[:72],
+                "pm10": hourly.get("pm10", [])[:72],
             },
             "light_pollution": lp,
             "_note": f"光污染数据来源：{lp.get('data_source', '本地数据库')}",
