@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>天气与观星预报系统</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=10" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- 全局进度条 -->
+  <div id="progressBar" style="width: 0%;"></div>
+  <div id="progressLabel" class="progress-label hidden">加载中 0/8</div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🌌</span>
+      <div>
+        <h1>天气与观星预报系统</h1>
+        <p class="subtitle">CMA · ECMWF · GFS 三源集成 · 支持全国城市</p>
+      </div>
+    </div>
+    <div class="controls">
+      <!-- 预设城市下拉 -->
+      <select id="citySelect" title="选择预设城市"></select>
+      
+      <!-- 城市搜索框 -->
+      <div class="search-box">
+        <input type="text" id="citySearch" placeholder="🔍 输入城市名搜索..." autocomplete="off" />
+        <div id="searchResults" class="search-results hidden"></div>
+      </div>
+      
+      <input type="date" id="datePicker" title="选择预报日期" />
+      <button id="refreshBtn" class="btn">🔄 刷新</button>
+      <button id="customToggle" class="btn btn-ghost">📍 自定义坐标</button>
+      <button id="themeToggle" class="btn btn-ghost" title="切换主题">🌙</button>
+    </div>
+    <div id="customPanel" class="custom-panel hidden">
+      <input type="number" id="customLat" placeholder="纬度" step="0.01" />
+      <input type="number" id="customLon" placeholder="经度" step="0.01" />
+      <input type="number" id="customElev" placeholder="海拔(m)" step="1" />
+      <button id="customApply" class="btn">应用</button>
+    </div>
+  </header>
+
+  <main id="content">
+    <!-- 实况 + 天文 + 光污染 概览 -->
+    <section class="grid-3">
+      <div class="card" id="nowCard">
+        <h2>🌡️ 实时天气</h2>
+        <div id="nowBody" class="placeholder">加载中…</div>
+      </div>
+      <div class="card" id="astroCard">
+        <h2>🌙 天文信息</h2>
+        <div id="astroBody" class="placeholder">加载中…</div>
+      </div>
+      <div class="card" id="airCard">
+        <h2>🏭 空气质量 / 光污染</h2>
+        <div id="airBody" class="placeholder">加载中…</div>
+      </div>
+    </section>
+
+    <!-- 7 天预报 -->
+    <section class="card">
+      <h2>📅 7-16 天预报</h2>
+      <div id="forecastBody" class="forecast-strip placeholder">加载中…</div>
+    </section>
+
+    <!-- 逐小时 -->
+    <section class="card">
+      <h2>⏱️ 逐小时预报 <span id="hourlyDateTag" class="tag"></span></h2>
+      <div class="chart-wrap"><canvas id="hourlyChart"></canvas></div>
+      <div id="hourlyMeta" class="meta-row"></div>
+    </section>
+
+    <!-- 观星条件 -->
+    <section class="card highlight">
+      <h2>🔭 观星条件评分</h2>
+      <div id="stargazingSummary" class="summary"></div>
+      <div id="stargazingBody" class="stargaze-timeline placeholder">加载中…</div>
+      <div class="legend">
+        <span><i class="dot ex"></i>优(≥70)</span>
+        <span><i class="dot good"></i>良(50-69)</span>
+        <span><i class="dot mod"></i>中(30-49)</span>
+        <span><i class="dot poor"></i>差(<30)</span>
+        <span><i class="dot win"></i>推荐窗口</span>
+        <span>💧 有降水</span>
+      </div>
+      <div id="stargazingBreakdown" class="breakdown hidden"></div>
+    </section>
+
+    <!-- 多模型对比 -->
+    <section class="card">
+      <h2>📊 多模型集成对比</h2>
+      <div id="multimodelBody" class="placeholder">加载中…</div>
+    </section>
+
+    <!-- 历史同期 -->
+    <section class="card">
+      <h2>📈 历史同期比对</h2>
+      <div class="chart-wrap"><canvas id="historicalChart"></canvas></div>
+    </section>
+
+    <!-- 天气系统分析 -->
+    <section class="card">
+      <h2>🌀 天气系统分析</h2>
+      <div id="analysisBody" class="placeholder">加载中…</div>
+      <div class="chart-wrap"><canvas id="pressureChart"></canvas></div>
+    </section>
+  </main>
+
+  <!-- 无数据提示 -->
+  <div id="noDataBanner" class="no-data-banner hidden">
+    <span class="no-data-icon">⚠️</span>
+    <span id="noDataMessage">该城市暂无数据，请选择其他城市</span>
+  </div>
+
+  <footer>
+    <p>数据源：CMA 中央气象台 · Open-Meteo (ECMWF/GFS) · 空气质量 API · 仅供非商用 · <span id="updatedAt"></span></p>
+  </footer>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/js/api.js?v=10"></script>
+  <script src="/static/js/charts.js?v=10"></script>
+  <script src="/static/js/weather.js?v=10"></script>
+  <script src="/static/js/stargazing.js?v=10"></script>
+  <script src="/static/js/app.js?v=10"></script>
+</body>
+</html>
