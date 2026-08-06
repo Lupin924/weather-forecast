@@ -394,9 +394,14 @@ async def weather_forecast(
     if city.cma_station_id:
         try:
             raw = await cma.get_weather(city.cma_station_id)
+            today = _today_str()
             for d in raw.get("daily", []):
+                d_date = d.get("date", "").replace("/", "-")
+                # 过滤过去日期：CMA 偶发返回过时数据（如已停用站号返回几年前数据）
+                if d_date < today:
+                    continue
                 daily_out.append({
-                    "date": d.get("date", "").replace("/", "-"),
+                    "date": d_date,
                     "high": d.get("high"),
                     "low": d.get("low"),
                     "day_text": d.get("dayText"),
@@ -447,6 +452,8 @@ async def weather_forecast(
 
     if not daily_out:
         raise HTTPException(502, "预报数据源获取失败")
+    # 按日期升序排序，避免数据源拼接导致日期错乱
+    daily_out.sort(key=lambda x: x.get("date", ""))
     return _envelope(city, daily_out, sources, "中", stale)
 
 
