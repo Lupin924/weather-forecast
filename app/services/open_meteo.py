@@ -31,10 +31,15 @@ HOURLY_VARS = [
     "surface_pressure",
     "pressure_msl",
     "cloud_cover",
+    "cloud_cover_low",        # ⭐ v2.2: 低云
+    "cloud_cover_mid",        # ⭐ v2.2: 中云
+    "cloud_cover_high",       # ⭐ v2.2: 高云
     "wind_speed_10m",
     "wind_direction_10m",
     "wind_gusts_10m",
     "visibility",
+    "cape",                   # ⭐ v2.2: 对流有效位能 (上海崇明指数)
+    "lifted_index",           # ⭐ v2.2: 抬升指数 (上海崇明指数)
 ]
 
 # 日变量（天文 + 概要）

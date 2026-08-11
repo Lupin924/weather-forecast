@@ -51,18 +51,18 @@
         <div id="nowBody" class="placeholder">加载中…</div>
       </div>
       <div class="card" id="astroCard">
-        <h2>🌙 天文信息</h2>
+        <h2>🌙 天文信息 <span id="astroDateTag" class="tag"></span></h2>
         <div id="astroBody" class="placeholder">加载中…</div>
       </div>
       <div class="card" id="airCard">
-        <h2>🏭 空气质量 / 光污染</h2>
+        <h2>🏭 空气质量 / 光污染 <span id="airDateTag" class="tag"></span></h2>
         <div id="airBody" class="placeholder">加载中…</div>
       </div>
     </section>
 
     <!-- 7 天预报 -->
     <section class="card">
-      <h2>📅 7-16 天预报</h2>
+      <h2>📅 7 天预报</h2>
       <div id="forecastBody" class="forecast-strip placeholder">加载中…</div>
     </section>
 
@@ -75,7 +75,7 @@
 
     <!-- 观星条件 -->
     <section class="card highlight">
-      <h2>🔭 观星条件评分</h2>
+      <h2>🔭 观星条件评分 <span id="stargazingDateTag" class="tag"></span></h2>
       <div id="stargazingSummary" class="summary"></div>
       <div id="stargazingBody" class="stargaze-timeline placeholder">加载中…</div>
       <div class="legend">
@@ -91,19 +91,19 @@
 
     <!-- 多模型对比 -->
     <section class="card">
-      <h2>📊 多模型集成对比</h2>
+      <h2>📊 多模型集成对比 <span id="multimodelDateTag" class="tag"></span></h2>
       <div id="multimodelBody" class="placeholder">加载中…</div>
     </section>
 
     <!-- 历史同期 -->
     <section class="card">
-      <h2>📈 历史同期比对</h2>
+      <h2>📈 历史同期比对 <span id="historicalDateTag" class="tag"></span></h2>
       <div class="chart-wrap"><canvas id="historicalChart"></canvas></div>
     </section>
 
     <!-- 天气系统分析 -->
     <section class="card">
-      <h2>🌀 天气系统分析</h2>
+      <h2>🌀 天气系统分析 <span id="analysisDateTag" class="tag"></span></h2>
       <div id="analysisBody" class="placeholder">加载中…</div>
       <div class="chart-wrap"><canvas id="pressureChart"></canvas></div>
     </section>

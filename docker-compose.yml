@@ -6,7 +6,7 @@ services:
     image: weather-forecast:latest
     container_name: weather-forecast
     ports:
-      - "8000:8000"
+      - "8787:8000"
     volumes:
       - ./cache:/app/cache
       - ./logs:/app/logs
@@ -14,7 +14,8 @@ services:
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s
-      timeout: 5s
-      retries: 3
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     environment:
       - TZ=Asia/Shanghai

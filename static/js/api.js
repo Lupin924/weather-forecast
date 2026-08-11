@@ -1,6 +1,6 @@
 // API 封装：统一处理城市/日期/自定义坐标参数
 const API = {
-  cityId: 'anji',
+  cityId: 'beijing',
   custom: null, // { lat, lon, elev }
   date: new Date().toISOString().slice(0, 10),
   currentCity: null, // 当前选中的城市信息
