@@ -62,7 +62,7 @@ function renderNow(data) {
     el.className = 'placeholder';
     el.innerHTML = (cityName ? '<div class="city-name">📍 ' + cityName + '</div>' : '') +
       '<div class="no-data-hint">📅 ' + (data.message || '该日期暂无实况数据') + '</div>' +
-      '<div class="meta-row">点击预报卡前 3 天日期可查看预报详情</div>';
+      '<div class="meta-row">点击预报卡前 5 天日期可查看预报详情</div>';
     return;
   }
 
@@ -279,7 +279,7 @@ function renderAirQuality(data) {
   `;
 }
 
-// 7-16 天预报
+// 未来 7 天预报
 function renderForecast(daily) {
   const el = document.getElementById('forecastBody');
   const card = document.querySelector('#forecastBody').closest('.card');
@@ -293,9 +293,9 @@ function renderForecast(daily) {
   // 使用本地日期避免 toISOString 的 UTC 偏移
   const now = new Date();
   const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-  // 计算前 3 天可点击日期（今天 + 未来 2 天）
+  // 计算可点击日期（今天 + 未来 4 天，共 5 天）
   const clickable = new Set();
-  for (let n = 0; n < 3; n++) {
+  for (let n = 0; n < 5; n++) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + n);
     const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     clickable.add(ds);

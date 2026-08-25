@@ -11,7 +11,7 @@ Python FastAPI 后端 + 原生 HTML/CSS/JS 前端 + Chart.js 可视化，无需 
 |:---|:---|:---|
 | 🌡️ 实时天气 | 气温/体感/气压/湿度/风/降水 + 气象预警徽章 | CMA |
 | 🌙 天文信息 | 月相可视化、日出日落、月出月落、照亮比例 | Open-Meteo |
-| 📅 7-16天预报 | 高低温、天气图标、降水；CMA 7天 + Open-Meteo 扩展 | CMA + Open-Meteo |
+| 📅 7 天预报 | 高低温、天气图标、降水；CMA + Open-Meteo 集成 | CMA + Open-Meteo |
 | ⏱️ 逐小时预报 | 温度折线 + 云量面积 + 风速柱（双轴 Chart.js） | CMA + Open-Meteo |
 | 🔭 观星条件评分 | 18:00-05:00 逐时 0-100 评分时间轴 + 最佳窗口 | ECMWF + 天文 |
 | 📊 多模型集成 | ECMWF vs GFS 对比表 + 集成值 + 分歧度 | Open-Meteo |
@@ -35,13 +35,13 @@ pip install -r requirements.txt
 ### 2. 启动服务
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8787
 ```
 
 ### 3. 访问应用
 
-- **主界面**：http://localhost:8000
-- **API 文档**（Swagger）：http://localhost:8000/docs
+- **主界面**：http://localhost:8787
+- **API 文档**（Swagger）：http://localhost:8787/docs
 
 > **端口说明**：后端始终监听 **8000** 端口。EXE 模式直接访问 8000；Docker 模式通过端口转发映射为 **8787**（见下方 Docker 部署章节）。
 
@@ -99,7 +99,7 @@ dist/WeatherForecast.exe    # 约 18 MB
 
 常见问题：
 - **页面显示"无法访问此页面"**：杀毒软件可能拦截了解压过程，临时关闭杀毒软件或添加白名单
-- **端口被占用**：关闭占用 8000 端口的程序后重试
+- **端口被占用**：关闭占用 8787 端口的程序后重试
 - **首次启动慢**：onefile 模式需解压，首次启动约 5-15 秒
 
 ---
@@ -234,7 +234,7 @@ weather/
 
 | 城市 | 坐标 | 海拔 | CMA 站点 |
 |:---|:---|:---:|:---:|
-| 安吉天荒坪（默认） | 30.45, 119.68 | 900m | 58446 |
+| 北京（默认） | 39.904, 116.407 | 43 | 54511 |
 | 莫干山 | 30.60, 119.90 | 600m | 58450 |
 | 长白山 | 42.02, 128.08 | 1800m | 54085 |
 | 青海湖 | 36.90, 100.20 | 3200m | 52856 |
@@ -251,7 +251,7 @@ weather/
 |:---|:---|:---|
 | GET | `/api/cities` | 预设城市列表 |
 | GET | `/api/weather/{city_id}/now` | 实况 + 预警 |
-| GET | `/api/weather/{city_id}/forecast` | 7-16 天预报 |
+| GET | `/api/weather/{city_id}/forecast` | 7 天预报 |
 | GET | `/api/weather/{city_id}/hourly?date=` | 逐小时 |
 | GET | `/api/weather/{city_id}/multimodel?date=` | ECMWF/GFS 集成 |
 | GET | `/api/stargazing/{city_id}?date=` | 观星评分时间轴 |

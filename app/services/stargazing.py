@@ -92,9 +92,71 @@ def _score_night_sky(altitude: float) -> float:
 
 # ---- 各维度子评分 ----
 def _score_cloud(cloud: Optional[float]) -> float:
+    """总云量评分（兼容旧调用）"""
     if cloud is None:
         return 50.0
     return max(0.0, min(100.0, 100.0 - cloud))
+
+
+def _score_cloud_by_layer(
+    cloud_total: Optional[float],
+    cloud_low: Optional[float],
+    cloud_mid: Optional[float],
+    cloud_high: Optional[float],
+) -> tuple[float, dict]:
+    """v2.2: 按云属分级评分 (卷云/中云/低云不同处理)
+    依据: 百度贴吧《天文随笔》"卷云少量不影响, 卷层云铺满放弃, 中云基本放弃, 低云完全遮挡"
+    返回 (score, info_dict)"""
+    parts = {"total": cloud_total, "low": cloud_low, "mid": cloud_mid, "high": cloud_high}
+    info = {}
+    score = 100.0
+    if cloud_high is not None and cloud_high > 80:
+        delta = cloud_high * 0.3
+        score -= delta
+        info["high_layer"] = f"高云{cloud_high:.0f}%穿透 (扣{delta:.0f})"
+    if cloud_mid is not None and cloud_mid > 50:
+        delta = cloud_mid * 0.6
+        score -= delta
+        info["mid_layer"] = f"中云{cloud_mid:.0f}%基本放弃 (扣{delta:.0f})"
+    if cloud_low is not None and cloud_low > 30:
+        delta = cloud_low * 1.0
+        score -= delta
+        info["low_layer"] = f"低云{cloud_low:.0f}%完全遮挡 (扣{delta:.0f})"
+    score = max(0.0, min(100.0, score))
+    return score, info
+
+
+def _score_lifted_index(li: Optional[float]) -> float:
+    """v2.2: 抬升指数 LI 评分 (上海崇明 7 因子之一)
+    LI < -3 → 强对流潜势 (扣 20)
+    LI > 0 → 稳定大气 (加 10)
+    中性 → 不动"""
+    if li is None:
+        return 80.0  # 缺数据 fallback
+    if li < -3: return 60.0  # 强对流
+    if li > 0: return 90.0   # 稳定
+    return 75.0             # 中性
+
+
+def _score_cape(cape: Optional[float]) -> float:
+    """v2.2: CAPE 对流有效位能"""
+    if cape is None: return 80.0
+    if cape > 1000: return 60.0  # 高对流
+    if cape > 500: return 75.0
+    return 90.0
+
+
+def _score_dew_depression(temp: Optional[float], dew_point: Optional[float]) -> tuple[float, str]:
+    """v2.2: 露点分离度评分 (设备安全)
+    <2°C → 必结露 (扣 30)
+    2-5°C → 风险 (扣 15)
+    >5°C → 安全"""
+    if temp is None or dew_point is None:
+        return 70.0, "露点数据缺"
+    spread = temp - dew_point
+    if spread < 2: return 30.0, f"露点分离{spread:.1f}°C必结露"
+    if spread < 5: return 60.0, f"露点分离{spread:.1f}°C风险"
+    return 90.0, f"露点分离{spread:.1f}°C安全"
 
 
 def _score_moon(illum: Optional[float], below_horizon: bool, altitude: float) -> float:
@@ -135,7 +197,8 @@ def _score_visibility(vis_km: Optional[float]) -> float:
 
 
 def _score_humidity(h: Optional[float], dew_point: Optional[float] = None, temp: Optional[float] = None) -> float:
-    """湿度评分：40-60% 最佳。如果接近露点则额外扣分（雾/凝结风险）。"""
+    """湿度评分：40-60% 最佳。
+    ⭐ v2.2: 露点分离度已抽离到 _score_dew_depression(), 此处只评湿度本身"""
     if h is None:
         return 50.0
     base = 100.0
@@ -143,16 +206,6 @@ def _score_humidity(h: Optional[float], dew_point: Optional[float] = None, temp:
         base = max(0.0, 100.0 - (40 - h) * 2.5)
     elif h > 60:
         base = max(0.0, 100.0 - (h - 60) * 2.5)
-
-    # 露点差：温度与露点之差越小，雾/凝结风险越高
-    if dew_point is not None and temp is not None:
-        spread = temp - dew_point
-        if spread < 2:
-            base *= 0.5  # 极高风险，大幅扣分
-        elif spread < 5:
-            base *= 0.75  # 中等风险
-        elif spread < 8:
-            base *= 0.9   # 轻微风险
 
     return max(0.0, min(100.0, base))
 
@@ -425,7 +478,7 @@ async def build_stargazing(
     lat: float, lon: float, elevation: int, date_str: str
 ) -> dict[str, Any]:
     """构建观星评分数据。"""
-    fc = await open_meteo.get_forecast(lat, lon, elevation, forecast_days=16)
+    fc = await open_meteo.get_forecast(lat, lon, elevation, forecast_days=7)
     daily = fc["daily"]
     hourly = fc["hourly"]
 
@@ -476,6 +529,12 @@ async def build_stargazing(
         wind = p.get("wind_speed_10m")
         gust = p.get("wind_gusts_10m")
         precip = p.get("precipitation")
+        # ⭐ v2.2: 三层云量 + 对流参数
+        cloud_low = p.get("cloud_cover_low")
+        cloud_mid = p.get("cloud_cover_mid")
+        cloud_high = p.get("cloud_cover_high")
+        cape = p.get("cape")
+        li = p.get("lifted_index")
         below = not _moon_up_at(t, events)
 
         if altitude >= 0:
@@ -516,7 +575,8 @@ async def build_stargazing(
             })
             continue
 
-        s_cloud = _score_cloud(cloud)
+        # ⭐ v2.2: 云属分级评分 (卷云/中云/低云不同处理)
+        s_cloud, cloud_info = _score_cloud_by_layer(cloud, cloud_low, cloud_mid, cloud_high)
         s_moon = _score_moon(illum, below, altitude)
         s_precip = _score_precipitation(precip)
         s_light = _score_light_pollution(bortle)
@@ -524,6 +584,10 @@ async def build_stargazing(
         s_hum = _score_humidity(hum, dew, temp)
         s_wind = _score_wind(gust, wind)
         s_aq = _score_air_quality(current_aqi)
+        # ⭐ v2.2: 露点分离度 + LI + CAPE (上海崇明 7 因子)
+        s_dew, dew_info = _score_dew_depression(temp, dew)
+        s_li = _score_lifted_index(li)
+        s_cape = _score_cape(cape)
 
         score = (
             s_cloud * STARGAZE_WEIGHTS["cloud"]
@@ -574,6 +638,7 @@ async def build_stargazing(
             "is_daytime": False,
             "breakdown": {
                 "cloud": round(s_cloud, 1),
+                "cloud_layers": cloud_info,  # ⭐ v2.2: 云属分级详情
                 "moon": round(s_moon, 1),
                 "night_sky": round(s_night, 1),
                 "precipitation": round(s_precip, 1),
@@ -582,6 +647,10 @@ async def build_stargazing(
                 "humidity": round(s_hum, 1),
                 "wind": round(s_wind, 1),
                 "air_quality": round(s_aq, 1),
+                "dew_depression": round(s_dew, 1),  # ⭐ v2.2
+                "dew_info": dew_info,
+                "lifted_index": round(s_li, 1),    # ⭐ v2.2
+                "cape": round(s_cape, 1),          # ⭐ v2.2
             },
         })
 

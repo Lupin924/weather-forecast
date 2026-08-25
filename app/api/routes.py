@@ -252,7 +252,7 @@ async def weather_now(
         # 取目标日同时刻预报
         try:
             fc = await open_meteo.get_forecast(
-                city.latitude, city.longitude, city.elevation_m, forecast_days=16
+                city.latitude, city.longitude, city.elevation_m, forecast_days=7
             )
             hourly = fc.get("hourly", [])
             current_hour = datetime.now().hour
@@ -421,7 +421,7 @@ async def weather_forecast(
     # Open-Meteo 补充（扩展到 16 天 + 补全降水/云量）
     try:
         fc = await open_meteo.get_forecast(
-            city.latitude, city.longitude, city.elevation_m, forecast_days=16
+            city.latitude, city.longitude, city.elevation_m, forecast_days=7
         )
         om_daily = {d["time"]: d for d in fc.get("daily", [])}
         for entry in daily_out:
@@ -505,7 +505,7 @@ async def weather_hourly(
     # Open-Meteo 逐小时（覆盖更广 + 阵风/露点）
     try:
         fc = await open_meteo.get_forecast(
-            city.latitude, city.longitude, city.elevation_m, forecast_days=16
+            city.latitude, city.longitude, city.elevation_m, forecast_days=7
         )
         cma_times = {h["time"] for h in hourly_out}
         for p in fc.get("hourly", []):
@@ -601,7 +601,7 @@ async def astronomy(
     target = date or _today_str()
     try:
         fc = await open_meteo.get_forecast(
-            city.latitude, city.longitude, city.elevation_m, forecast_days=16
+            city.latitude, city.longitude, city.elevation_m, forecast_days=7
         )
         day = next((d for d in fc.get("daily", []) if d.get("time") == target), None)
         if not day:

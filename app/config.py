@@ -167,9 +167,13 @@ CITIES: dict[str, City] = {
         "lushan", "庐山", 29.54, 115.98, 1474, "58444",
         "匡庐奇秀甲天下", ["避暑", "瀑布"],
     ),
+    "huanghe": City(
+        "huanghe", "黄山", 30.13, 118.16, 1864, "58437",
+        "五岳归来不看山，黄山归来不看岳", ["登山", "云海"],
+    ),
 }
 
-DEFAULT_CITY_ID = "anji"
+DEFAULT_CITY_ID = "beijing"
 
 
 def get_city(city_id: str) -> Optional[City]:

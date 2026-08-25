@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
   let autoRefreshTimer = null;
   let currentLoadingCount = 0;
-  let totalTasks = 11; // 9 张主卡片 + forecast + (预留)
+  let totalTasks = 9; // 增加了空气质量任务
 
   function toast(msg) {
     const t = $('toast');
@@ -49,6 +49,46 @@
     updateProgress(currentLoadingCount, totalTasks);
   }
 
+  // ⭐ 同步更新所有卡片标题的日期 tag
+  function updateAllDateTags() {
+    if (!API.date) return;
+    const target = API.date;  // YYYY-MM-DD (用户当前选中日期)
+    const today = (() => {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    })();
+    const isToday = target === today;
+    const targetShort = target.slice(5);  // MM-DD
+    const weekday = ['周日','周一','周二','周三','周四','周五','周六'][new Date(target + 'T00:00:00').getDay()];
+    const label = isToday ? `${target} 今天` : `${target} ${weekday}`;
+
+    const tag = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+
+    // 单日卡片 — 都用目标日期
+    tag('hourlyDateTag', `${targetShort} ${weekday}`);
+    tag('astroDateTag', isToday ? '今天' : weekday);
+    tag('airDateTag', isToday ? '今天' : weekday);
+    tag('stargazingDateTag', isToday ? '今晚' : weekday);
+    tag('multimodelDateTag', targetShort);
+
+    // 多日卡片 — 显示起止日期
+    const forecast = API._forecastData;
+    if (forecast && forecast.length) {
+      const first = forecast[0].date;
+      const last = forecast[forecast.length - 1].date;
+      tag('historicalDateTag', `${targetShort} (近3年)`);
+      const anaFirst = forecast[0].date.slice(5);
+      const anaLast = forecast[forecast.length - 1].date.slice(5);
+      tag('analysisDateTag', `${anaFirst} ~ ${anaLast}`);
+    } else {
+      tag('historicalDateTag', `${targetShort} (近3年)`);
+      tag('analysisDateTag', '未来 7 天');
+    }
+  }
+
   function setCardLoading(cardId, isLoading) {
     const card = $(cardId);
     if (!card) return;
@@ -64,8 +104,8 @@
     const cached = API.getCachedData(API.date);
     const hasCache = !!cached;
 
-    // 注意：卫星云图 / 台风追踪 已拆分为独立页面（/satellite、/typhoon），
-    // 主页面不再渲染这两张卡片。
+    // ⭐ 同步更新所有卡片的日期 tag
+    updateAllDateTags();
 
     // forecast 是 16 天固定列表，不随选中日期变化，加载一次即可
     if (API._forecastData) {
@@ -241,14 +281,14 @@
   async function loadCities() {
     try {
       const r = await API.cities();
-      // 保存完整城市列表供下拉框切换时反查 lat/lon
+      // 保存完整城市列表供下拉框切换时反查 lat/lon（卫星/台风卡片需要坐标）
       API._cities = r.cities;
       const sel = $('citySelect');
       sel.innerHTML = '<option value="">-- 选择预设城市 --</option>' +
         r.cities.map(c =>
           `<option value="${c.id}"${c.id === r.default ? ' selected' : ''}>${c.name}（${c.elevation_m}m）</option>`
         ).join('');
-      
+
       // 保存默认城市（完整对象，含 lat/lon 用于卫星/台风卡片）
       if (r.default) {
         const defaultCity = r.cities.find(c => c.id === r.default);
@@ -487,7 +527,7 @@
       loadAll();
     });
 
-    // 预报卡日期点击（前 3 天可点击）
+    // 预报卡日期点击（前 5 天可点击）
     $('forecastBody').addEventListener('click', (e) => {
       const dayCard = e.target.closest('.day-card.clickable');
       if (!dayCard) return;
