@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
   let autoRefreshTimer = null;
   let currentLoadingCount = 0;
-  let totalTasks = 9; // 增加了空气质量任务
+  let totalTasks = 11; // 9 张主卡片 + forecast + (预留)
 
   function toast(msg) {
     const t = $('toast');
@@ -63,6 +63,9 @@
   async function loadAll() {
     const cached = API.getCachedData(API.date);
     const hasCache = !!cached;
+
+    // 注意：卫星云图 / 台风追踪 已拆分为独立页面（/satellite、/typhoon），
+    // 主页面不再渲染这两张卡片。
 
     // forecast 是 16 天固定列表，不随选中日期变化，加载一次即可
     if (API._forecastData) {
@@ -238,17 +241,19 @@
   async function loadCities() {
     try {
       const r = await API.cities();
+      // 保存完整城市列表供下拉框切换时反查 lat/lon
+      API._cities = r.cities;
       const sel = $('citySelect');
-      sel.innerHTML = '<option value="">-- 选择预设城市 --</option>' + 
+      sel.innerHTML = '<option value="">-- 选择预设城市 --</option>' +
         r.cities.map(c =>
           `<option value="${c.id}"${c.id === r.default ? ' selected' : ''}>${c.name}（${c.elevation_m}m）</option>`
         ).join('');
       
-      // 保存默认城市名称
+      // 保存默认城市（完整对象，含 lat/lon 用于卫星/台风卡片）
       if (r.default) {
         const defaultCity = r.cities.find(c => c.id === r.default);
         if (defaultCity) {
-          API.currentCity = defaultCity.name;
+          API.currentCity = defaultCity;
         }
       }
     } catch (e) {
@@ -388,8 +393,8 @@
     API.custom = null;
     $('customPanel').classList.add('hidden');
 
-    // 记录当前城市名称
-    API.currentCity = cityData.name;
+    // 记录当前城市（完整对象，含 lat/lon 用于卫星/台风卡片）
+    API.currentCity = cityData;
     // 清除预缓存（城市已变更）
     API.clearPreloadCache();
 
@@ -460,10 +465,12 @@
         API.clearPreloadCache();
         $('customPanel').classList.add('hidden');
         
-        // 记录城市名称
+        // 记录当前城市（完整对象，含 lat/lon 用于卫星/台风卡片）
         const selectedOption = e.target.options[e.target.selectedIndex];
         const cityName = selectedOption.text.split('（')[0];
-        API.currentCity = cityName;
+        // 从 API._cities 中查找完整对象
+        const fullCity = (API._cities || []).find(c => c.id === e.target.value);
+        API.currentCity = fullCity || { id: e.target.value, name: cityName, lat: null, lon: null };
         
         // 清空搜索框（互锁）
         $('citySearch').value = '';
@@ -517,16 +524,18 @@
 
   async function init() {
     $('datePicker').value = API.date;
-    
+
     // 初始化功能
     initTheme();
     initCitySearch();
+    // 仅在独立页面（satellite/typhoon）才加载 Satellite 模块；主页面已不再使用
+    if (typeof Satellite !== 'undefined') Satellite.init();
     await loadCities();
     bindEvents();
-    
+
     // 首次加载
     await loadAll();
-    
+
     // 每 10 分钟自动刷新实况
     autoRefreshTimer = setInterval(refreshNow, 10 * 60 * 1000);
   }

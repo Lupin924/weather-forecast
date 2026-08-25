@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>&#x53f0;&#x98ce;&#x9884;&#x8b66;&#x8ffd;&#x8e2a; &#xb7; &#x5929;&#x6c14;&#x4e0e;&#x89c2;&#x661f;&#x9884;&#x62a5;&#x7cfb;&#x7edf;</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=22" />
+</head>
+<body class="standalone-page">
+  <header class="topbar standalone-topbar">
+    <div class="brand">
+      <span class="logo">&#x1f30c;</span>
+      <div>
+        <h1>&#x5929;&#x6c14;&#x4e0e;&#x89c2;&#x661f;&#x9884;&#x62a5;&#x7cfb;&#x7edf;</h1>
+        <p class="subtitle">CMA &#xb7; ECMWF &#xb7; GFS &#x4e09;&#x6e90;&#x96c6;&#x6210; &#xb7; &#x652f;&#x6301;&#x5168;&#x56fd;&#x57ce;&#x5e02;</p>
+      </div>
+    </div>
+    <div class="controls standalone-controls">
+      <select id="citySelect" title="&#x9009;&#x62e9;&#x9884;&#x8bbe;&#x57ce;&#x5e02;"></select>
+      <div class="search-box">
+        <input type="text" id="citySearch" placeholder="&#x1f50d; &#x8f93;&#x5165;&#x57ce;&#x5e02;&#x540d;&#x641c;&#x7d22;..." autocomplete="off" />
+        <div id="searchResults" class="search-results hidden"></div>
+      </div>
+      <a href="/" class="btn btn-ghost" title="&#x8fd4;&#x56de;&#x4e3b;&#x9875;">&#x1f3e0; &#x4e3b;&#x9875;</a>
+      <a href="/satellite" class="btn btn-ghost" title="&#x72ec;&#x7acb;&#x536b;&#x661f;&#x4e91;&#x56fe;&#x9875;">&#x1f6f0;&#xfe0f; &#x536b;&#x661f;&#x4e91;&#x56fe;</a>
+      <a href="/typhoon" class="btn btn-ghost active" title="&#x72ec;&#x7acb;&#x53f0;&#x98ce;&#x9875;">&#x1f300; &#x53f0;&#x98ce;&#x8ffd;&#x8e2a;</a>
+      <button id="themeToggle" class="btn btn-ghost" title="&#x5207;&#x6362;&#x4e3b;&#x9898;">&#x1f319;</button>
+      <button id="backBtn" class="btn btn-ghost" title="&#x8fd4;&#x56de;&#x4e0a;&#x4e00;&#x9875;">&#x2190; &#x8fd4;&#x56de;</button>
+    </div>
+    <div id="customPanel" class="custom-panel hidden">
+      <input type="number" id="customLat" placeholder="&#x7eac;&#x5ea6;" step="0.01" />
+      <input type="number" id="customLon" placeholder="&#x7ecf;&#x5ea6;" step="0.01" />
+      <input type="number" id="customElev" placeholder="&#x6d77;&#x62d4;(m)" step="1" />
+      <button id="customApply" class="btn">&#x5e94;&#x7528;</button>
+    </div>
+  </header>
+  <main class="standalone-main">
+    <section class="standalone-card typhoon-card-standalone" id="typhoonCard">
+      <div class="standalone-head">
+        <h2>&#x1f300; &#x53f0;&#x98ce;&#x9884;&#x8b66;&#x8ffd;&#x8e2a;</h2>
+        <div class="overlay-tabs" id="typhoonTabs">
+          <button class="tab active" data-zoom="3" data-lat="20" data-lon="130">&#x1f5fa;&#xfe0f; &#x897f;&#x592a;&#x5e73;&#x6d0b;&#x5168;&#x5883;</button>
+          <button class="tab" data-zoom="4" data-lat="22" data-lon="125">&#x1f310; &#x4e1c;&#x5357;&#x4e9a;&#x6d77;&#x57df;</button>
+          <button class="tab" data-zoom="5" data-lat="25" data-lon="120">&#x1f4cd; &#x4e2d;&#x56fd;&#x8fd1;&#x6d77;</button>
+          <button class="tab" id="typhoonLocateBtn" title="&#x805a;&#x7126;&#x5f53;&#x524d;&#x57ce;&#x5e02;">&#x1f4cd; &#x805a;&#x7126;&#x672c;&#x5730;</button>
+        </div>
+        <div class="city-info" id="cityInfo">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
+      </div>
+      <div id="typhoonBody" class="satellite-wrap standalone-wrap placeholder">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
+      <div class="meta-row typhoon-meta">
+        <span class="data-source">&#x6570;&#x636e;&#x6e90;&#xff1a;NHC &#xb7; JMA &#xb7; ECMWF</span>
+        <span class="update-tip">&#x53f0;&#x98ce;&#x5b63;&#x8bf7;&#x5173;&#x6ce8;&#x5b9e;&#x65f6;&#x8def;&#x5f84;&#x4e0e;&#x5f3a;&#x5ea6;</span>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <p>&#x6570;&#x636e;&#x6e90;&#xff1a;CMA &#x4e2d;&#x592e;&#x6c14;&#x8c61;&#x53f0; &#xb7; Open-Meteo (ECMWF/GFS) &#xb7; Windy.com &#xb7; &#x4ec5;&#x4f9b;&#x975e;&#x5546;&#x7528;</p>
+  </footer>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/js/api.js?v=22"></script>
+  <script src="/static/js/satellite.js?v=22"></script>
+  <script src="/static/js/page.js?v=22"></script>
+</body>
+</html>

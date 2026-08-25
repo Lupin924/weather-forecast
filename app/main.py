@@ -43,6 +43,24 @@ def index():
     return {"message": "前端尚未生成，请访问 /docs 查看 API。"}
 
 
+@app.get("/satellite")
+def satellite():
+    """独立卫星云图页面（全屏显示）。"""
+    page_path = STATIC_DIR / "satellite.html"
+    if page_path.exists():
+        return FileResponse(page_path)
+    return {"message": "satellite.html 尚未生成"}
+
+
+@app.get("/typhoon")
+def typhoon():
+    """独立台风追踪页面（全屏显示）。"""
+    page_path = STATIC_DIR / "typhoon.html"
+    if page_path.exists():
+        return FileResponse(page_path)
+    return {"message": "typhoon.html 尚未生成"}
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}

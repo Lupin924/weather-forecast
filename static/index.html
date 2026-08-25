@@ -3,128 +3,105 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>天气与观星预报系统</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=14" />
+  <title>&#x5929;&#x6c14;&#x4e0e;&#x89c2;&#x661f;&#x9884;&#x62a5;&#x7cfb;&#x7edf;</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=22" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  <!-- 全局进度条 -->
   <div id="progressBar" style="width: 0%;"></div>
-  <div id="progressLabel" class="progress-label hidden">加载中 0/9</div>
-
+  <div id="progressLabel" class="progress-label hidden">&#x52a0;&#x8f7d;&#x4e2d; 0/9</div>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">🌌</span>
+      <span class="logo">&#x1f30c;</span>
       <div>
-        <h1>天气与观星预报系统</h1>
-        <p class="subtitle">CMA · ECMWF · GFS 三源集成 · 支持全国城市</p>
+        <h1>&#x5929;&#x6c14;&#x4e0e;&#x89c2;&#x661f;&#x9884;&#x62a5;&#x7cfb;&#x7edf;</h1>
+        <p class="subtitle">CMA &#xb7; ECMWF &#xb7; GFS &#x4e09;&#x6e90;&#x96c6;&#x6210; &#xb7; &#x652f;&#x6301;&#x5168;&#x56fd;&#x57ce;&#x5e02;</p>
       </div>
     </div>
     <div class="controls">
-      <!-- 预设城市下拉 -->
-      <select id="citySelect" title="选择预设城市"></select>
-      
-      <!-- 城市搜索框 -->
+      <select id="citySelect" title="&#x9009;&#x62e9;&#x9884;&#x8bbe;&#x57ce;&#x5e02;"></select>
       <div class="search-box">
-        <input type="text" id="citySearch" placeholder="🔍 输入城市名搜索..." autocomplete="off" />
+        <input type="text" id="citySearch" placeholder="&#x1f50d; &#x8f93;&#x5165;&#x57ce;&#x5e02;&#x540d;&#x641c;&#x7d22;..." autocomplete="off" />
         <div id="searchResults" class="search-results hidden"></div>
       </div>
-      
-      <input type="date" id="datePicker" title="选择预报日期" />
-      <button id="refreshBtn" class="btn">🔄 刷新</button>
-      <button id="customToggle" class="btn btn-ghost">📍 自定义坐标</button>
-      <button id="themeToggle" class="btn btn-ghost" title="切换主题">🌙</button>
+      <input type="date" id="datePicker" title="&#x9009;&#x62e9;&#x9884;&#x62a5;&#x65e5;&#x671f;" />
+      <button id="refreshBtn" class="btn">&#x1f504; &#x5237;&#x65b0;</button>
+      <button id="customToggle" class="btn btn-ghost">&#x1f4cd; &#x81ea;&#x5b9a;&#x4e49;&#x5750;&#x6807;</button>
+      <a href="/satellite" class="btn btn-ghost" title="&#x72ec;&#x7acb;&#x536b;&#x661f;&#x4e91;&#x56fe;&#x9875;">&#x1f6f0;&#xfe0f; &#x536b;&#x661f;&#x4e91;&#x56fe;</a>
+      <a href="/typhoon" class="btn btn-ghost" title="&#x72ec;&#x7acb;&#x53f0;&#x98ce;&#x9875;">&#x1f300; &#x53f0;&#x98ce;&#x8ffd;&#x8e2a;</a>
+      <button id="themeToggle" class="btn btn-ghost" title="&#x5207;&#x6362;&#x4e3b;&#x9898;">&#x1f319;</button>
     </div>
     <div id="customPanel" class="custom-panel hidden">
-      <input type="number" id="customLat" placeholder="纬度" step="0.01" />
-      <input type="number" id="customLon" placeholder="经度" step="0.01" />
-      <input type="number" id="customElev" placeholder="海拔(m)" step="1" />
-      <button id="customApply" class="btn">应用</button>
+      <input type="number" id="customLat" placeholder="&#x7eac;&#x5ea6;" step="0.01" />
+      <input type="number" id="customLon" placeholder="&#x7ecf;&#x5ea6;" step="0.01" />
+      <input type="number" id="customElev" placeholder="&#x6d77;&#x62d4;(m)" step="1" />
+      <button id="customApply" class="btn">&#x5e94;&#x7528;</button>
     </div>
   </header>
-
   <main id="content">
-    <!-- 实况 + 天文 + 光污染 概览 -->
     <section class="grid-3">
       <div class="card" id="nowCard">
-        <h2>🌡️ 实时天气</h2>
-        <div id="nowBody" class="placeholder">加载中…</div>
+        <h2>&#x1f321;&#xfe0f; &#x5b9e;&#x65f6;&#x5929;&#x6c14;</h2>
+        <div id="nowBody" class="placeholder">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
       </div>
       <div class="card" id="astroCard">
-        <h2>🌙 天文信息</h2>
-        <div id="astroBody" class="placeholder">加载中…</div>
+        <h2>&#x1f319; &#x5929;&#x6587;&#x4fe1;&#x606f;</h2>
+        <div id="astroBody" class="placeholder">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
       </div>
       <div class="card" id="airCard">
-        <h2>🏭 空气质量 / 光污染</h2>
-        <div id="airBody" class="placeholder">加载中…</div>
+        <h2>&#x1f3ed; &#x7a7a;&#x6c14;&#x8d28;&#x91cf; / &#x5149;&#x6c61;&#x67d3;</h2>
+        <div id="airBody" class="placeholder">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
       </div>
     </section>
-
-    <!-- 7 天预报 -->
     <section class="card">
-      <h2>📅 7-16 天预报</h2>
-      <div id="forecastBody" class="forecast-strip placeholder">加载中…</div>
+      <h2>&#x1f4c5; 7-16 &#x5929;&#x9884;&#x62a5;</h2>
+      <div id="forecastBody" class="forecast-strip placeholder">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
     </section>
-
-    <!-- 逐小时 -->
     <section class="card">
-      <h2>⏱️ 逐小时预报 <span id="hourlyDateTag" class="tag"></span></h2>
+      <h2>&#x23f1;&#xfe0f; &#x9010;&#x5c0f;&#x65f6;&#x9884;&#x62a5; <span id="hourlyDateTag" class="tag"></span></h2>
       <div class="chart-wrap"><canvas id="hourlyChart"></canvas></div>
       <div id="hourlyMeta" class="meta-row"></div>
     </section>
-
-    <!-- 观星条件 -->
     <section class="card highlight">
-      <h2>🔭 观星条件评分</h2>
+      <h2>&#x1f52d; &#x89c2;&#x661f;&#x6761;&#x4ef6;&#x8bc4;&#x5206;</h2>
       <div id="stargazingSummary" class="summary"></div>
-      <div id="stargazingBody" class="stargaze-timeline placeholder">加载中…</div>
+      <div id="stargazingBody" class="stargaze-timeline placeholder">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
       <div class="legend">
-        <span><i class="dot ex"></i>优(≥70)</span>
-        <span><i class="dot good"></i>良(50-69)</span>
-        <span><i class="dot mod"></i>中(30-49)</span>
-        <span><i class="dot poor"></i>差(<30)</span>
-        <span><i class="dot win"></i>推荐窗口</span>
-        <span>💧 有降水</span>
+        <span><i class="dot ex"></i>&#x4f18;(&#x2265;70)</span>
+        <span><i class="dot good"></i>&#x826f;(50-69)</span>
+        <span><i class="dot mod"></i>&#x4e2d;(30-49)</span>
+        <span><i class="dot poor"></i>&#x5bee;(<30)</span>
+        <span><i class="dot win"></i>&#x63a8;&#x8350;&#x7a97;&#x53e3;</span>
+        <span>&#x1f4a7; &#x6709;&#x964d;&#x6c34;</span>
       </div>
       <div id="stargazingBreakdown" class="breakdown hidden"></div>
     </section>
-
-    <!-- 多模型对比 -->
     <section class="card">
-      <h2>📊 多模型集成对比</h2>
-      <div id="multimodelBody" class="placeholder">加载中…</div>
+      <h2>&#x1f4ca; &#x591a;&#x6a21;&#x578b;&#x96c6;&#x6210;&#x5bf9;&#x6bd4;</h2>
+      <div id="multimodelBody" class="placeholder">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
     </section>
-
-    <!-- 历史同期 -->
     <section class="card">
-      <h2>📈 历史同期比对</h2>
+      <h2>&#x1f4c8; &#x5386;&#x53f2;&#x540c;&#x671f;&#x6bd4;&#x5bf9;</h2>
       <div class="chart-wrap"><canvas id="historicalChart"></canvas></div>
     </section>
-
-    <!-- 天气系统分析 -->
     <section class="card">
-      <h2>🌀 天气系统分析</h2>
-      <div id="analysisBody" class="placeholder">加载中…</div>
+      <h2>&#x1f300; &#x5929;&#x6c14;&#x7cfb;&#x7edf;&#x5206;&#x6790;</h2>
+      <div id="analysisBody" class="placeholder">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
       <div class="chart-wrap"><canvas id="pressureChart"></canvas></div>
     </section>
   </main>
-
-  <!-- 无数据提示 -->
   <div id="noDataBanner" class="no-data-banner hidden">
-    <span class="no-data-icon">⚠️</span>
-    <span id="noDataMessage">该城市暂无数据，请选择其他城市</span>
+    <span class="no-data-icon">&#x26a0;&#xfe0f;</span>
+    <span id="noDataMessage">&#x8be5;&#x57ce;&#x5e02;&#x6682;&#x65e0;&#x6570;&#x636e;&#xff0c;&#x8bf7;&#x9009;&#x62e9;&#x5176;&#x4ed6;&#x57ce;&#x5e02;</span>
   </div>
-
   <footer>
-    <p>数据源：CMA 中央气象台 · Open-Meteo (ECMWF/GFS) · 空气质量 API · 仅供非商用 · <span id="updatedAt"></span></p>
+    <p>&#x6570;&#x636e;&#x6e90;&#xff1a;CMA &#x4e2d;&#x592e;&#x6c14;&#x8c61;&#x53f0; &#xb7; Open-Meteo (ECMWF/GFS) &#xb7; &#x7a7a;&#x6c14;&#x8d28;&#x91cf; API &#xb7; Windy.com &#xb7; &#x4ec5;&#x4f9b;&#x975e;&#x5546;&#x7528; &#xb7; <span id="updatedAt"></span></p>
   </footer>
-
   <div id="toast" class="toast hidden"></div>
-
-  <script src="/static/js/api.js?v=14"></script>
-  <script src="/static/js/charts.js?v=14"></script>
-  <script src="/static/js/weather.js?v=14"></script>
-  <script src="/static/js/stargazing.js?v=14"></script>
-  <script src="/static/js/app.js?v=14"></script>
+  <script src="/static/js/api.js?v=22"></script>
+  <script src="/static/js/charts.js?v=22"></script>
+  <script src="/static/js/weather.js?v=22"></script>
+  <script src="/static/js/stargazing.js?v=22"></script>
+  <script src="/static/js/app.js?v=22"></script>
 </body>
 </html>

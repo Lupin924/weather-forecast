@@ -43,8 +43,10 @@ function renderNow(data) {
   const el = document.getElementById('nowBody');
   const card = document.getElementById('nowCard');
 
-  // 获取当前城市名称
-  const cityName = (typeof API !== 'undefined' && API.currentCity) ? API.currentCity : '';
+  // 获取当前城市名称（API.currentCity 现在是对象）
+  const cityName = (typeof API !== 'undefined' && API.currentCity)
+    ? (API.currentCity.name || API.currentCity.label || '')
+    : '';
 
   if (!data) {
     el.className = 'placeholder';
@@ -177,37 +179,37 @@ function renderAirQuality(data) {
   const _now = new Date();
   const todayStr = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0') + '-' + String(_now.getDate()).padStart(2, '0');
   const targetDate = (typeof API !== 'undefined' && API.date) ? API.date : todayStr;
-  const isForecast = targetDate !== todayStr;
+  // 后端已按 mode 字段区分实时/预报，且 hourly 已按目标日期过滤
+  const isForecast = data && data.mode === 'forecast';
+  const isError = data && data.mode === 'error';
 
-  // 从 hourly 中选取目标日期同时刻代表值
+  // 从 hourly 中选取目标日期同时刻代表值（后端已过滤到目标日期）
   let aqi = null, pm2_5 = null, pm10 = null, repHour = null;
-  if (isForecast && data.hourly && data.hourly.time) {
+  if (isForecast && data.hourly && data.hourly.time && data.hourly.time.length) {
     const times = data.hourly.time;
     const currentHour = new Date().getHours();
     let bestDiff = 99;
     for (let i = 0; i < times.length; i++) {
-      if (!times[i].startsWith(targetDate)) continue;
       try {
         const h = parseInt(times[i].slice(11, 13));
         const d = Math.abs(h - currentHour);
         if (d < bestDiff) {
           bestDiff = d;
-          aqi = data.hourly.aqi[i];
+          aqi = data.hourly.aqi ? data.hourly.aqi[i] : null;
           pm2_5 = data.hourly.pm2_5 ? data.hourly.pm2_5[i] : null;
           pm10 = data.hourly.pm10 ? data.hourly.pm10[i] : null;
           repHour = h;
         }
       } catch (e) { /* skip */ }
     }
-  } else {
-    const current = data.current || {};
-    aqi = current.aqi;
-    pm2_5 = current.pm2_5;
-    pm10 = current.pm10;
+  } else if (!isForecast && data.current) {
+    aqi = data.current.aqi;
+    pm2_5 = data.current.pm2_5;
+    pm10 = data.current.pm10;
   }
 
-  // 预报模式下无数据
-  const noAqiData = isForecast && aqi == null;
+  // 预报模式下无数据（后端未返回该日期的 hourly）
+  const noAqiData = isForecast && (aqi == null || isError);
 
   // AQI 等级
   let aqiClass = 'aqi-good';
