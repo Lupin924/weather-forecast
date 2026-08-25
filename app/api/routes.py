@@ -22,6 +22,7 @@ from ..services import (
     typhoon,
     air_quality,
 )
+from ..services import satellite as sat_clouds
 
 router = APIRouter(prefix="/api")
 
@@ -91,6 +92,17 @@ def _resolve_city(
             cma_station_id=cma_result["station_id"],
         )
     
+    # 最后兜底：前端已携带自定义坐标（如地理编码 geo_ 城市、cma_ 城市均走此路径）
+    if lat is not None and lon is not None:
+        return CityInfo(
+            id=f"coord_{lat:.3f}_{lon:.3f}",
+            name=f"坐标({lat:.2f},{lon:.2f})",
+            latitude=lat,
+            longitude=lon,
+            elevation_m=int(elevation or 0),
+            cma_station_id=None,
+        )
+    
     raise HTTPException(404, f"未知城市: {city_id}。可通过 /api/search/cities?q=关键词 搜索")
 
 
@@ -130,6 +142,52 @@ def list_cities():
 # ---------------------------------------------------------------------------
 # 城市搜索（支持关键词搜索预设城市和 CMA 站号）
 # ---------------------------------------------------------------------------
+GEOCODING_API_URL = "https://geocoding-api.open-meteo.com/v1/search"
+
+
+def geocode_city(keyword: str, limit: int = 5) -> list[dict]:
+    """Open-Meteo 地理编码兜底：解析任意城市/地名坐标（免密钥，全球覆盖）。
+
+    当预设城市与 CMA 站号数据库都未命中时使用（可解决部分省会/大城市
+    不在本地库导致搜索不到的问题）。
+    """
+    keyword = (keyword or "").strip()
+    if not keyword:
+        return []
+    try:
+        import httpx
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(
+                GEOCODING_API_URL,
+                params={
+                    "name": keyword,
+                    "count": min(limit, 5),
+                    "language": "zh",
+                    "format": "json",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:
+        return []
+    results = []
+    for item in (data.get("results") or [])[:limit]:
+        region = [x for x in (item.get("admin1"), item.get("country")) if x]
+        cc = item.get("country_code")
+        desc = " · ".join(region) + (f" ({cc})" if cc else "")
+        results.append({
+            "id": f"geo_{item.get('id') or keyword}",
+            "name": item.get("name", keyword),
+            "latitude": item.get("latitude", 0),
+            "longitude": item.get("longitude", 0),
+            "elevation_m": item.get("elevation", 0),
+            "desc": desc,
+            "source": "geocode",
+            "matched_by": "geocoding",
+        })
+    return results
+
+
 @router.get("/search/cities")
 def search_cities_endpoint(q: str = Query(..., description="搜索关键词")):
     """搜索城市（预设城市 + CMA 站号数据库）。"""
@@ -158,9 +216,15 @@ def search_cities_endpoint(q: str = Query(..., description="搜索关键词")):
     results = {
         "preset": preset_results,
         "cma_match": cma_data,
-        "total": len(preset_results) + (1 if cma_data else 0),
     }
-    
+
+    # 3. 本地库 + CMA 都未命中时，用 Open-Meteo 地理编码兜底
+    geocode_results = []
+    if not preset_results and not cma_data:
+        geocode_results = geocode_city(q, limit=5)
+    results["geocode"] = geocode_results
+    results["total"] = len(preset_results) + (1 if cma_data else 0) + len(geocode_results)
+
     return results
 
 
@@ -215,6 +279,23 @@ def resolve_city(
             }
         }
     
+    # 地理编码兜底
+    geo = geocode_city(name, limit=1)
+    if geo:
+        g = geo[0]
+        return {
+            "success": True,
+            "city": {
+                "id": g["id"],
+                "name": g["name"],
+                "latitude": g["latitude"],
+                "longitude": g["longitude"],
+                "elevation_m": g["elevation_m"],
+                "source": "geocode",
+                "matched_by": "geocoding",
+            }
+        }
+
     return {
         "success": False,
         "message": f"未找到匹配的城市: {name}",
@@ -709,6 +790,17 @@ async def analysis(
 # ---------------------------------------------------------------------------
 # 健康检查
 # ---------------------------------------------------------------------------
+@router.get("/satellite/fy4")
+async def satellite_fy4(
+    region: str = Query("china", description="china | disk"),
+):
+    """返回国家卫星气象中心风云四号（FY-4B）最新真彩云图元信息。"""
+    try:
+        return await sat_clouds.get_fy4_latest(region=region)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"卫星云图获取失败: {e}")
+
+
 @router.get("/health")
 async def health_check():
     """健康检查接口。"""

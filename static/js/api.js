@@ -90,6 +90,9 @@ const API = {
     if (dateOverride) return this._getForDate(`/analysis/${this.cityId}`, dateOverride);
     return this._get(`/analysis/${this.cityId}`, { date: this.date });
   },
+  satelliteFY4(region = 'china') {
+    return this._get('/satellite/fy4', { region });
+  },
 
   // 预缓存指定日期的所有数据（后台静默拉取）
   async preloadDate(date) {

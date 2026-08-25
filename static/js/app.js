@@ -319,10 +319,11 @@
         const results = await API.searchCities(q);
         const preset = results.preset || [];
         const cmaMatch = results.cma_match;
+        const geocode = results.geocode || [];
         
         let html = '';
         
-        if (preset.length === 0 && !cmaMatch) {
+        if (preset.length === 0 && !cmaMatch && geocode.length === 0) {
           html = '<div class="search-no-results">未找到匹配的城市，按 Enter 直接解析</div>';
         } else {
           // CMA 精确匹配优先显示
@@ -355,6 +356,23 @@
               '<div class="desc">' + (c.desc || '') + ' · ' + c.elevation_m + 'm</div>' +
             '</div>';
           });
+
+          // Open-Meteo 地理编码兜底结果（任意城市名，全球覆盖）
+          if (geocode.length) {
+            html += '<div class="search-group-label">其他城市（Open-Meteo 地理编码）</div>';
+            geocode.forEach(c => {
+              html += '<div class="search-result-item" ' +
+                'data-city-id="' + c.id + '" ' +
+                'data-city-name="' + encodeURIComponent(c.name) + '" ' +
+                'data-city-lat="' + c.latitude + '" ' +
+                'data-city-lon="' + c.longitude + '" ' +
+                'data-city-elev="' + (c.elevation_m || 0) + '" ' +
+                'data-city-source="geocode">' +
+                '<div class="name">' + c.name + ' <span class="source geocode">地理编码</span></div>' +
+                '<div class="desc">' + (c.desc || '') + '</div>' +
+              '</div>';
+            });
+          }
         }
         
         searchResults.innerHTML = html;
@@ -441,8 +459,8 @@
     // 清空下拉选择（互锁）
     $('citySelect').value = '';
 
-    // 预设城市直接使用 id
-    if (cityData.id && !cityData.id.startsWith('cma_')) {
+    // 预设城市直接使用 id（geocode 与 cma 走坐标路径）
+    if (cityData.id && !cityData.id.startsWith('cma_') && !cityData.id.startsWith('geo_')) {
       API.cityId = cityData.id;
       toast('已切换至: ' + cityData.name);
       loadAll();

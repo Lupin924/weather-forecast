@@ -1,44 +1,31 @@
 /* ============================================
- * 卫星云图 / 台风追踪模块（iframe 注入版）
+ * 卫星云图 / 台风追踪模块（FY-4B 真彩云图版）
  *
- * 作用：在卫星云图页 (/satellite) 与台风追踪页 (/typhoon) 注入 Windy.com embed iframe
+ * 说明：Windy.com embed 在境内常被网络策略阻断，已改为拉取国家卫星气象中心
+ * (NSMC) 风云四号B星中国区域真彩合成云图（img.nsmc.org.cn，境内直连免密钥）。
  *
  * 暴露 API：
- *   Satellite.init()                  - 绑定 tab 切换
- *   Satellite.renderSatellite(city)   - 渲染卫星云图
- *   Satellite.renderTyphoon(city)     - 渲染台风追踪
+ *   Satellite.init()                - 绑定可选 tab 切换（兼容旧结构）
+ *   Satellite.renderSatellite(city) - 渲染卫星云图
+ *   Satellite.renderTyphoon(city)   - 渲染台风追踪（FY-4B 云图 + 官方路径入口）
  * ============================================ */
 
 (function () {
   'use strict';
 
-  // ====== 日志系统（用于排查 iframe 加载问题）======
-  const LOG_PREFIX = '[Windy iframe]';
+  const LOG_PREFIX = '[卫星云图]';
   function logInfo(tag, msg, extra) {
     if (window.console && console.log) {
-      if (extra !== undefined) {
-        console.log(LOG_PREFIX + ' [' + tag + '] ' + msg, extra);
-      } else {
-        console.log(LOG_PREFIX + ' [' + tag + '] ' + msg);
-      }
-    }
-  }
-  function logWarn(tag, msg, extra) {
-    if (window.console && console.warn) {
-      if (extra !== undefined) {
-        console.warn(LOG_PREFIX + ' [' + tag + '] ' + msg, extra);
-      } else {
-        console.warn(LOG_PREFIX + ' [' + tag + '] ' + msg);
-      }
+      extra !== undefined
+        ? console.log(LOG_PREFIX + ' [' + tag + '] ' + msg, extra)
+        : console.log(LOG_PREFIX + ' [' + tag + '] ' + msg);
     }
   }
   function logError(tag, msg, extra) {
     if (window.console && console.error) {
-      if (extra !== undefined) {
-        console.error(LOG_PREFIX + ' [' + tag + '] ' + msg, extra);
-      } else {
-        console.error(LOG_PREFIX + ' [' + tag + '] ' + msg);
-      }
+      extra !== undefined
+        ? console.error(LOG_PREFIX + ' [' + tag + '] ' + msg, extra)
+        : console.error(LOG_PREFIX + ' [' + tag + '] ' + msg);
     }
   }
 
@@ -46,253 +33,226 @@
   function validateLatLon(lat, lon) {
     if (typeof lat !== 'number' || typeof lon !== 'number') return false;
     if (isNaN(lat) || isNaN(lon)) return false;
-    if (lat < -90 || lat > 90) return false;
-    if (lon < -180 || lon > 180) return false;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return false;
     return true;
   }
 
-  function escapeAttr(s) {
+  function escapeHtml(s) {
     if (s == null) return '';
     return String(s)
       .replace(/&/g, '&amp;')
-      .replace(/"/g, '&quot;')
       .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function getCityCoord(city, key) {
     if (!city) return null;
-    const v = city[key];
-    if (v != null) return v;
-    // 兼容 alt 命名
+    if (city[key] != null) return city[key];
     if (key === 'lat') return city.latitude;
     if (key === 'lon') return city.longitude;
     return null;
   }
 
-  // ====== iframe 加载状态机 ======
-  const IFRAME_TIMEOUT_MS = 15000; // 15 秒超时
+  // ====== 服务商切换（Windy 默认 / NSMC） ======
+  const PROVIDER_KEY = 'weather-sat-provider';
 
-  function showIframeError(container, message, retryFn) {
+  function getProvider() {
+    return localStorage.getItem(PROVIDER_KEY) === 'nsmc' ? 'nsmc' : 'windy';
+  }
+
+  function setProvider(p) {
+    localStorage.setItem(PROVIDER_KEY, p === 'nsmc' ? 'nsmc' : 'windy');
+  }
+
+  function detectPageType() {
+    return document.getElementById('typhoonBody') ? 'typhoon' : 'satellite';
+  }
+
+  // ====== 云图容器状态 ======
+  function showLoading(container) {
     if (!container) return;
-    container.classList.remove('iframe-loading');
-    container.classList.add('iframe-error');
+    container.classList.remove('placeholder', 'fy4-error');
+    container.innerHTML =
+      '<div class="fy4-loading"><span class="spinner"></span>' +
+      '<span class="loading-text">卫星云图加载中…</span></div>';
+  }
+
+  function showError(container, message) {
+    if (!container) return;
+    container.classList.remove('fy4-loading');
+    container.classList.add('fy4-error');
     container.innerHTML =
       '<div class="error-icon">&#x26a0;&#xfe0f;</div>' +
-      '<div class="error-msg">' + escapeAttr(message) + '</div>' +
-      '<button class="retry-btn" type="button">&#x1f504; &#x91cd;&#x8bd5;</button>';
+      '<div class="error-text">' + escapeHtml(message) + '</div>' +
+      '<button class="retry-btn" type="button">&#x1f504; 重试</button>' +
+      '<a class="retry-link" href="https://www.nsmc.org.cn/nsmc/cn/image/index.html?id=FY4B_AGRI_IMG_REGI_GCLR_GLL" target="_blank" rel="noopener">前往国家卫星气象中心查看</a>';
     const btn = container.querySelector('.retry-btn');
-    if (btn && retryFn) {
-      btn.addEventListener('click', retryFn);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const city = (typeof API !== 'undefined') ? API.currentCity : null;
+        if (city) loadProvider(container, city);
+        else container.innerHTML = '<div class="loading-text">请选择城市后重试</div>';
+      });
     }
   }
 
-  /**
-   * 注入 Windy embed iframe
-   * @param {HTMLElement} container - 容器
-   * @param {string} url - Windy embed URL
-   * @param {string} tag - 日志标签（如 "satellite.clouds"）
-   * @param {string} title - 用于屏幕阅读器与日志
-   */
-  function injectIframe(container, url, tag, title) {
-    if (!container) {
-      logError(tag, '容器元素不存在');
+  function renderStage(container, meta, city, pageType) {
+    const lat = getCityCoord(city, 'lat');
+    const lon = getCityCoord(city, 'lon');
+    const locLabel = (city && city.name) ? city.name : '';
+    const coordLabel = (validateLatLon(lat, lon)) ? '(' + Number(lat).toFixed(2) + ', ' + Number(lon).toFixed(2) + ')' : '';
+
+    container.classList.remove('fy4-loading', 'fy4-error', 'placeholder');
+    container.innerHTML =
+      '<div class="fy4-stage">' +
+      '  <img src="' + escapeHtml(meta.url) + '" alt="FY-4B 真彩合成卫星云图" referrerpolicy="no-referrer" />' +
+      '  <div class="fy4-chip fy4-time">&#x1f6f0;&#xfe0f; FY-4B 真彩 · ' + escapeHtml(meta.time_local || '') + '（北京时间）</div>' +
+      (locLabel ? '<div class="fy4-chip fy4-loc">&#x1f4cd; ' + escapeHtml(locLabel) + ' ' + escapeHtml(coordLabel) + '</div>' : '') +
+      '  <div class="fy4-credit">' + escapeHtml(meta.source || '国家卫星气象中心') + '</div>' +
+      (pageType === 'typhoon'
+        ? '<a class="fy4-typhoon-link" href="https://typhoon.nmc.cn/" target="_blank" rel="noopener">&#x1f300; 官方台风路径（中央气象台）</a>'
+        : '') +
+      '</div>';
+  }
+
+  async function loadFY4(container, city, pageType) {
+    pageType = pageType || detectPageType();
+    const tag = 'fy4.' + pageType;
+    if (!container) { logError(tag, '容器缺失'); return; }
+    showLoading(container);
+
+    try {
+      if (!(typeof API !== 'undefined' && API.satelliteFY4)) throw new Error('API 模块未加载');
+      const meta = await API.satelliteFY4('china');
+      if (!meta || !meta.url) throw new Error('未获取到云图地址');
+      logInfo(tag, '获取到 FY-4B 云图', { url: meta.url, time: meta.time_local });
+
+      // 预加载图片，成功后再渲染（避免瞬时空白）
+      const img = new Image();
+      img.onload = () => renderStage(container, meta, city, pageType);
+      img.onerror = () => showError(container, '云图加载失败，可切换到 Windy 试试');
+      img.referrerPolicy = 'no-referrer';
+      img.src = meta.url;
+    } catch (e) {
+      logError(tag, '获取云图失败', e && e.message);
+      showError(container, '云图加载失败：' + ((e && e.message) || '未知错误'));
+    }
+  }
+
+  // ====== Windy 云图（默认服务商，需能访问 embed.windy.com） ======
+  function loadWindy(container, city, pageType) {
+    pageType = pageType || detectPageType();
+    const tag = 'windy.' + pageType;
+    const lat = getCityCoord(city, 'lat');
+    const lon = getCityCoord(city, 'lon');
+    if (!validateLatLon(lat, lon)) {
+      logError(tag, '城市坐标无效');
+      showError(container, '城市坐标无效，无法加载 Windy 云图');
       return;
     }
-    logInfo(tag, '开始加载 iframe', { title: title, url: url });
+    const zoom = pageType === 'typhoon' ? 4 : 5;
+    const src =
+      'https://embed.windy.com/embed2.html?' +
+      'lat=' + lat + '&lon=' + lon +
+      '&detailLat=' + lat + '&detailLon=' + lon +
+      '&width=1200&height=800&zoom=' + zoom +
+      '&level=surface&overlay=clouds&product=ecmwf' +
+      '&menu=&message=true&marker=true&calendar=now&pressure=&type=map' +
+      '&location=coordinates&detail=true&metricWind=default&metricTemp=default&radarRange=-1';
 
-    // 1. 标记 loading 状态
-    container.classList.remove('iframe-error');
-    container.classList.add('iframe-loading');
-    container.innerHTML = '<div class="spinner"></div><div class="loading-text">加载中…</div>';
+    container.classList.remove('placeholder', 'fy4-error');
+    container.innerHTML =
+      '<div class="fy4-loading"><span class="spinner"></span>' +
+      '<span class="loading-text">Windy 云图加载中…</span></div>' +
+      '<iframe class="windy-frame" src="' + escapeHtml(src) +
+      '" title="Windy 卫星云图" allowfullscreen loading="lazy"></iframe>';
 
-    // 2. 启动超时定时器
-    const startTime = Date.now();
-    let settled = false;
-    let timeoutTimer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      const elapsed = Date.now() - startTime;
-      logError(tag, '⏰ iframe 加载超时（' + elapsed + 'ms）', { timeout_ms: IFRAME_TIMEOUT_MS });
-      showIframeError(container, '加载超时（' + Math.round(IFRAME_TIMEOUT_MS / 1000) + '秒），请检查网络后重试', () => {
-        injectIframe(container, url, tag, title);
+    const frame = container.querySelector('.windy-frame');
+    if (frame) {
+      frame.addEventListener('load', () => {
+        const loader = container.querySelector('.fy4-loading');
+        if (loader) loader.remove();
       });
-    }, IFRAME_TIMEOUT_MS);
-    logInfo(tag, '⏳ 超时定时器已启动', { timeout_ms: IFRAME_TIMEOUT_MS });
-
-    // 3. 创建 iframe DOM
-    logInfo(tag, '🖼️ 正在创建 iframe 元素');
-    const iframe = document.createElement('iframe');
-    iframe.src = url;
-    iframe.title = title || 'Windy embed';
-    iframe.setAttribute('loading', 'lazy');
-    iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
-    iframe.setAttribute('allow', 'geolocation; fullscreen');
-    iframe.style.border = '0';
-    iframe.style.width = '100%';
-    iframe.style.height = '100%';
-    iframe.style.display = 'block';
-
-    // 4. 监听加载事件
-    iframe.addEventListener('load', () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutTimer);
-      const elapsed = Date.now() - startTime;
-      logInfo(tag, '✅ iframe 加载成功', { elapsed_ms: elapsed });
-      container.classList.remove('iframe-loading');
-      container.classList.remove('iframe-error');
-      // 清掉 loading 占位 DOM
-      container.innerHTML = '';
-      container.appendChild(iframe);
-    });
-
-    iframe.addEventListener('error', (e) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutTimer);
-      const elapsed = Date.now() - startTime;
-      logError(tag, '❌ iframe 加载失败', { elapsed_ms: elapsed, detail: (e && e.message) || 'unknown' });
-      showIframeError(container, 'iframe 加载失败，请检查网络或稍后重试', () => {
-        injectIframe(container, url, tag, title);
+      // iframe 加载异常时提示切换 NSMC（境内直连）
+      frame.addEventListener('error', () => {
+        showError(container, 'Windy 云图加载失败，请切换为 NSMC（境内直连）');
       });
-    });
-
-    // 5. 插入 DOM（先插入占位文本，再被 load 事件替换；这里我们直接挂 iframe）
-    container.classList.remove('iframe-loading');
-    container.classList.remove('iframe-error');
-    container.innerHTML = '';
-    container.appendChild(iframe);
-    logInfo(tag, '✅ iframe DOM 已挂载，等待加载事件');
+    }
+    logInfo(tag, '已注入 Windy iframe', { zoom });
   }
 
-  // ====== Windy URL 构造 ======
-  function buildSatelliteUrl(lat, lon, overlay) {
-    // overlay: clouds | wind | rain | temp | radar
-    return 'https://embed.windy.com/embed2.html?lat=' + lat +
-      '&lon=' + lon +
-      '&detailLat=' + lat +
-      '&detailLon=' + lon +
-      '&width=650&height=450&zoom=5' +
-      '&level=surface&overlay=' + encodeURIComponent(overlay) +
-      '&product=ecmwf&menu=&message=&marker=&calendar=&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1';
+  // ====== 按用户选择的服务商加载 ======
+  function loadProvider(container, city) {
+    if (!container) return;
+    const pageType = detectPageType();
+    if (getProvider() === 'nsmc') {
+      loadFY4(container, city, pageType);
+    } else {
+      loadWindy(container, city, pageType);
+    }
   }
 
-  function buildTyphoonUrl(lat, lon, zoom) {
-    // 台风追踪使用 wind overlay 叠加
-    const z = zoom || 4;
-    return 'https://embed.windy.com/embed2.html?lat=' + lat +
-      '&lon=' + lon +
-      '&detailLat=' + lat +
-      '&detailLon=' + lon +
-      '&width=650&height=450&zoom=' + z +
-      '&level=surface&overlay=wind' +
-      '&product=ecmwf&menu=&message=&marker=&calendar=&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1';
+  // ====== 服务商切换按钮绑定 ======
+  function bindProviderSwitcher() {
+    const group = document.getElementById('satProviderGroup');
+    if (!group) return;
+    const sync = () => {
+      const current = getProvider();
+      group.querySelectorAll('.tab').forEach((t) => {
+        t.classList.toggle('active', t.dataset.provider === current);
+      });
+    };
+    sync();
+    group.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const p = tab.dataset.provider;
+        if (!p) return;
+        setProvider(p);
+        sync();
+        const container = document.getElementById(detectPageType() === 'typhoon' ? 'typhoonBody' : 'satelliteBody');
+        if (container && typeof API !== 'undefined' && API.currentCity) {
+          loadProvider(container, API.currentCity);
+        }
+      });
+    });
   }
 
   // ====== 卫星云图渲染 ======
   function renderSatellite(city) {
     const tag = 'satellite';
     const container = document.getElementById('satelliteBody');
-    if (!container) {
-      logWarn(tag, '找不到 #satelliteBody 容器，可能不在卫星页');
-      return;
-    }
-    if (!city) {
-      logWarn(tag, '未传入城市对象');
-      return;
-    }
-    const lat = getCityCoord(city, 'lat');
-    const lon = getCityCoord(city, 'lon');
-    if (!validateLatLon(lat, lon)) {
-      logError(tag, '城市坐标无效', { lat: lat, lon: lon });
-      showIframeError(container, '城市坐标无效，无法加载卫星云图', () => renderSatellite(city));
-      return;
-    }
-
-    // 当前 overlay
-    const activeTab = document.querySelector('#satelliteTabs .tab.active');
-    const overlay = activeTab ? activeTab.dataset.overlay : 'clouds';
-    logInfo(tag, '渲染卫星云图', { city: city.name, overlay: overlay, lat: lat, lon: lon });
-
-    const url = buildSatelliteUrl(lat, lon, overlay);
-    injectIframe(container, url, tag + '.' + overlay, (city.name || '') + ' · ' + overlay);
+    if (!container) { logError(tag, '找不到 #satelliteBody'); return; }
+    if (!city) { logError(tag, '未传入城市对象'); showError(container, '未选择城市'); return; }
+    loadProvider(container, city);
   }
 
   // ====== 台风追踪渲染 ======
   function renderTyphoon(city) {
     const tag = 'typhoon';
     const container = document.getElementById('typhoonBody');
-    if (!container) {
-      logWarn(tag, '找不到 #typhoonBody 容器，可能不在台风页');
-      return;
-    }
-    if (!city) {
-      logWarn(tag, '未传入城市对象');
-      return;
-    }
-
-    // 判断当前激活的 tab：预设区域 vs 聚焦本地
-    const activeTab = document.querySelector('#typhoonTabs .tab.active');
-    const isLocate = activeTab && activeTab.id === 'typhoonLocateBtn';
-
-    let lat, lon, zoom;
-    if (isLocate) {
-      lat = getCityCoord(city, 'lat');
-      lon = getCityCoord(city, 'lon');
-      zoom = 6;
-      if (!validateLatLon(lat, lon)) {
-        logError(tag, '本地坐标无效', { lat: lat, lon: lon });
-        showIframeError(container, '当前城市坐标无效，无法聚焦本地', () => renderTyphoon(city));
-        return;
-      }
-    } else {
-      lat = activeTab ? parseFloat(activeTab.dataset.lat) : 20;
-      lon = activeTab ? parseFloat(activeTab.dataset.lon) : 130;
-      zoom = activeTab ? parseInt(activeTab.dataset.zoom, 10) : 3;
-      if (!validateLatLon(lat, lon)) {
-        logError(tag, '预设区域坐标无效', { lat: lat, lon: lon });
-        showIframeError(container, '区域坐标无效', () => renderTyphoon(city));
-        return;
-      }
-    }
-
-    logInfo(tag, '渲染台风追踪', { city: city.name, lat: lat, lon: lon, zoom: zoom, mode: isLocate ? 'local' : 'region' });
-    const url = buildTyphoonUrl(lat, lon, zoom);
-    injectIframe(container, url, tag + '.' + (isLocate ? 'local' : 'region'), (city.name || '') + ' · 台风');
+    if (!container) { logError(tag, '找不到 #typhoonBody'); return; }
+    if (!city) { logError(tag, '未传入城市对象'); showError(container, '未选择城市'); return; }
+    loadProvider(container, city);
   }
 
-  // ====== 初始化（绑定 tab 切换）======
+  // ====== 初始化（绑定服务商切换；兼容旧式 tab 结构）======
   function init() {
     logInfo('init', 'Satellite 模块初始化');
-
-    // 卫星 tab 切换
-    const satTabs = document.getElementById('satelliteTabs');
-    if (satTabs) {
-      satTabs.querySelectorAll('.tab').forEach(tab => {
+    bindProviderSwitcher();
+    const bindTab = (tabs, fn) => {
+      if (!tabs) return;
+      tabs.querySelectorAll('.tab').forEach((tab) => {
         tab.addEventListener('click', () => {
-          satTabs.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          tabs.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
           tab.classList.add('active');
-          if (typeof API !== 'undefined' && API.currentCity) {
-            renderSatellite(API.currentCity);
-          }
+          if (typeof API !== 'undefined' && API.currentCity) fn(API.currentCity);
         });
       });
-    }
-
-    // 台风 tab 切换
-    const tyTabs = document.getElementById('typhoonTabs');
-    if (tyTabs) {
-      tyTabs.querySelectorAll('.tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-          tyTabs.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-          tab.classList.add('active');
-          if (typeof API !== 'undefined' && API.currentCity) {
-            renderTyphoon(API.currentCity);
-          }
-        });
-      });
-    }
+    };
+    bindTab(document.getElementById('satelliteTabs'), renderSatellite);
+    bindTab(document.getElementById('typhoonTabs'), renderTyphoon);
   }
 
   // 暴露 API
@@ -300,7 +260,9 @@
     init: init,
     renderSatellite: renderSatellite,
     renderTyphoon: renderTyphoon,
+    getProvider: getProvider,
+    setProvider: setProvider,
   };
 
-  logInfo('module', 'Satellite 模块已加载');
+  logInfo('module', 'Satellite 模块已加载（Windy / NSMC 可切换）');
 })();
