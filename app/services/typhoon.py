@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
-from ..config import TYPHOON_PRESSURE_THRESHOLD, TYPHOON_DROP_THRESHOLD
+from ..config import TYPHOON_DROP_THRESHOLD, TYPHOON_PRESSURE_THRESHOLD
 from . import open_meteo
 
 
-def _pressure_of(p: dict) -> Optional[float]:
+def _pressure_of(p: dict) -> float | None:
     """优先取海平面气压，退而取地面气压。"""
     return p.get("pressure_msl") if p.get("pressure_msl") is not None else p.get("surface_pressure")
 

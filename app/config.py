@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -15,7 +14,7 @@ class City:
     latitude: float
     longitude: float
     elevation_m: int
-    cma_station_id: Optional[str] = None
+    cma_station_id: str | None = None
     desc: str = ""
     tags: list[str] = field(default_factory=list)
 
@@ -171,12 +170,70 @@ CITIES: dict[str, City] = {
         "huanghe", "黄山", 30.13, 118.16, 1864, "58437",
         "五岳归来不看山，黄山归来不看岳", ["登山", "云海"],
     ),
+    # --- 赏雪模式：雪景旅游城市 ---
+    "shenyang": City(
+        "shenyang", "沈阳", 41.80, 123.43, 50, "54324",
+        "关外盛京，棋盘山冰雪大世界", ["雪景", "东北"],
+    ),
+    "changchun": City(
+        "changchun", "长春", 43.88, 125.32, 250, "54161",
+        "北国春城，净月潭瓦萨冰雪", ["雪景", "东北"],
+    ),
+    "jilin": City(
+        "jilin", "吉林", 43.84, 126.55, 200, "54082",
+        "雾凇之都，松花江畔奇观", ["雪景", "雾凇", "东北"],
+    ),
+    "yabuli": City(
+        "yabuli", "亚布力", 44.62, 128.53, 500, None,
+        "中国滑雪圣地， Alps of the East", ["雪景", "滑雪", "东北"],
+    ),
+    "xuexiang": City(
+        "xuexiang", "雪乡", 44.20, 128.75, 1100, None,
+        "双峰林场，中国雪乡", ["雪景", "东北"],
+    ),
+    "mohe": City(
+        "mohe", "漠河", 52.97, 122.54, 300, "50137",
+        "神州北极，极寒冰雪", ["雪景", "极光", "东北"],
+    ),
+    "weihai": City(
+        "weihai", "威海", 37.51, 122.12, 50, "54763",
+        "山东半岛雪窝，冬季看海赏雪", ["雪景", "山东半岛"],
+    ),
+    "yantai": City(
+        "yantai", "烟台", 37.46, 121.45, 50, "54765",
+        "山东半岛雪窝，滨海雪景", ["雪景", "山东半岛"],
+    ),
+    "taizijian": City(
+        "taizijian", "太子尖", 30.13, 118.90, 1557, None,
+        "浙西屋脊，华东著名赏雪徒步地", ["雪景", "浙西", "华东"],
+    ),
+    "tianmushan": City(
+        "tianmushan", "天目山", 30.34, 119.44, 1500, None,
+        "浙西名山，古树雾凇雪景", ["雪景", "浙西", "华东"],
+    ),
+    "xixi_zhexi": City(
+        "xixi_zhexi", "浙西大峡谷", 30.20, 118.95, 700, None,
+        "浙西临安，冬季雾凇冰瀑", ["雪景", "浙西", "华东"],
+    ),
+    "huangshan_snow": City(
+        "huangshan_snow", "黄山(冬)", 30.13, 118.16, 1840, "58437",
+        "黄山冬雪，云海雾凇奇观", ["雪景", "华东"],
+    ),
+    "jiuhuashan_snow": City(
+        "jiuhuashan_snow", "九华山(冬)", 30.10, 117.81, 1344, "58432",
+        "九华冬雪，佛国琉璃世界", ["雪景", "华东"],
+    ),
 }
 
 DEFAULT_CITY_ID = "beijing"
 
+# 用户在上海：作为两种模式的优先参考城市
+HOME_CITY_ID = "shanghai"
+HOME_CITY_LAT = 31.23
+HOME_CITY_LON = 121.47
 
-def get_city(city_id: str) -> Optional[City]:
+
+def get_city(city_id: str) -> City | None:
     return CITIES.get(city_id)
 
 
@@ -269,7 +326,7 @@ CMA_STATION_MAP: dict[str, dict] = {
 }
 
 
-def lookup_cma_city(name: str) -> Optional[dict]:
+def lookup_cma_city(name: str) -> dict | None:
     """根据城市名查询 CMA 站号及坐标。"""
     name = name.strip()
     # 精确匹配
@@ -344,6 +401,8 @@ CACHE_TTL = {
     "historical": 604800,  # 7 天
     "analysis": 3600,
     "air_quality": 1800,  # 30 分钟
+    "snow": 3600,         # ❄️ 赏雪单城预报 1 小时
+    "board": 3600,        # ❄️ 赏雪看板 1 小时
 }
 
 
@@ -360,3 +419,118 @@ def rating_for(score: float) -> tuple[str, str]:
         if score >= threshold:
             return label, key
     return RATING_THRESHOLDS[-1][1], RATING_THRESHOLDS[-1][2]
+
+
+# ---------------------------------------------------------------------------
+# 两种模式：观星 / 赏雪 —— 城市分组与排序
+# ---------------------------------------------------------------------------
+# 赏雪模式监控的雪景城市分组（按地域组织，保序）
+SNOW_CITY_GROUPS: list[dict] = [
+    {"name": "东北雪乡", "icon": "❄️", "cities": ["harbin", "yabuli", "xuexiang", "mohe", "jilin", "changchun", "shenyang", "changbaishan"]},
+    {"name": "华北京城", "icon": "🏯", "cities": ["beijing", "wutai"]},
+    {"name": "辽东半岛", "icon": "🌊", "cities": ["dalian"]},
+    {"name": "山东半岛", "icon": "🏖️", "cities": ["weihai", "yantai", "qingdao", "taishan"]},
+    {"name": "华东高山", "icon": "⛰️", "cities": ["taizijian", "tianmushan", "xixi_zhexi", "anji", "moganshan", "huangshan_snow", "jiuhuashan_snow"]},
+]
+
+# 观星模式整合后的精选城市分组（简化：只保留观星相关，上海/华东靠前）
+STARGAZE_CITY_GROUPS: list[dict] = [
+    {"name": "华东·近沪", "icon": "🌌", "cities": ["shanghai", "anji", "moganshan", "taizijian", "huangshan"]},
+    {"name": "高原暗夜", "icon": "🏔️", "cities": ["ali", "qinghaihu", "xining"]},
+    {"name": "北方星空", "icon": "🌠", "cities": ["changbaishan", "wutai", "beijing"]},
+    {"name": "名山大川", "icon": "⛰️", "cities": ["jiuhua", "lushan", "emei"]},
+]
+
+# 所有雪景城市 id（去重、保序）
+def snow_city_ids() -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for g in SNOW_CITY_GROUPS:
+        for cid in g["cities"]:
+            if cid not in seen and cid in CITIES:
+                seen.add(cid)
+                out.append(cid)
+    return out
+
+
+def stargaze_city_ids() -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for g in STARGAZE_CITY_GROUPS:
+        for cid in g["cities"]:
+            if cid not in seen and cid in CITIES:
+                seen.add(cid)
+                out.append(cid)
+    return out
+
+
+def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """两地球面距离（km）。"""
+    import math
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def distance_from_home(city: City) -> float:
+    """城市到上海（用户所在地）的距离 km。"""
+    return _haversine(HOME_CITY_LAT, HOME_CITY_LON, city.latitude, city.longitude)
+
+
+def sort_cities_for_home(city_ids: list[str]) -> list[str]:
+    """按离上海距离升序排列；上海本身排第一。"""
+    def key(cid: str) -> float:
+        c = CITIES.get(cid)
+        if not c:
+            return 1e9
+        if cid == HOME_CITY_ID:
+            return -1.0
+        return distance_from_home(c)
+    return sorted(city_ids, key=key)
+
+
+def city_to_dict(c: City) -> dict:
+    return {
+        "id": c.id,
+        "name": c.name,
+        "latitude": c.latitude,
+        "longitude": c.longitude,
+        "elevation_m": c.elevation_m,
+        "cma_station_id": c.cma_station_id,
+        "desc": c.desc,
+        "tags": c.tags,
+        "distance_km": round(distance_from_home(c)),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 赏雪评分配置（0-100，5 维加权）
+# ---------------------------------------------------------------------------
+SNOW_WEIGHTS = {
+    "temp": 0.34,          # 气温（低于 0℃ 越有利于雪）
+    "precip": 0.26,        # 降水概率
+    "snowfall": 0.22,      # 降雪量
+    "humidity": 0.10,      # 湿度
+    "elevation": 0.08,     # 海拔（高海拔更易积雪）
+}
+
+SNOW_RATING_THRESHOLDS = [
+    (75, "🌨️ 极佳", "excellent"),
+    (55, "❄️ 较大", "good"),
+    (35, "🌬️ 可能", "moderate"),
+    (0, "☀️ 较小", "poor"),
+]
+
+
+def snow_rating_for(score: float) -> tuple[str, str]:
+    for threshold, label, key in SNOW_RATING_THRESHOLDS:
+        if score >= threshold:
+            return label, key
+    return SNOW_RATING_THRESHOLDS[-1][1], SNOW_RATING_THRESHOLDS[-1][2]
+
+
+# 赏雪看板：未来 N 天
+SNOW_BOARD_DAYS = 7

@@ -7,11 +7,11 @@
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
-from ..config import CMA_BASE, CACHE_TTL, HTTP_TIMEOUT
+from ..config import CACHE_TTL, CMA_BASE, HTTP_TIMEOUT
 from . import cache
 
 # CMA 服务器拒绝无浏览器特征的请求（返回 403），需带 User-Agent
@@ -82,7 +82,7 @@ async def get_weather(station_id: str) -> dict[str, Any]:
         raise
 
 
-async def get_hourly(station_id: str, date: Optional[str] = None) -> dict[str, Any]:
+async def get_hourly(station_id: str, date: str | None = None) -> dict[str, Any]:
     """逐小时预报。返回按日期分组的列表；可按 date 过滤。
 
     date 格式：YYYY-MM-DD（会匹配 YYYY/MM/DD）。

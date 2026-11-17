@@ -1,10 +1,13 @@
-"""旅游城市天气预报及观星条件预报软件 —— FastAPI 入口。
+"""星野与雪国 —— 观星 / 赏雪双模式旅行天气预报（FastAPI 入口）。
 
 启动：uvicorn app.main:app --reload
 访问：http://localhost:8000
 文档：http://localhost:8000/docs
 """
 from __future__ import annotations
+
+import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,13 +16,30 @@ from fastapi.staticfiles import StaticFiles
 
 from .api.routes import router
 from .paths import STATIC_DIR, ensure_dirs
+from .services import prewarm
 
 ensure_dirs()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动时拉起后台缓存预热任务，关闭时优雅停止。"""
+    task = asyncio.create_task(prewarm.run_warmer())
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
 app = FastAPI(
-    title="旅游城市天气预报及观星条件预报",
-    description="聚合 CMA + ECMWF + GFS 三源气象数据，提供旅游/观星条件预报。",
-    version="1.0.0",
+    title="星野与雪国 · 双模式旅行天气预报",
+    description="观星模式（全国暗夜条件评分）与赏雪模式（雪景城市降雪概率看板）；聚合 CMA + ECMWF + GFS 三源气象数据，默认以上海为基准排序。",
+    version="2.2.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -61,6 +81,3 @@ def typhoon():
     return {"message": "typhoon.html 尚未生成"}
 
 
-@app.get("/api/health")
-def health():
-    return {"status": "ok"}

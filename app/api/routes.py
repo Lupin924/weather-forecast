@@ -1,26 +1,35 @@
 """REST API 路由：天气/观星/天文/历史/系统分析/城市搜索/空气质量。"""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
-from typing import Optional
+import asyncio
+from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException, Query
 
 from ..config import (
     CITIES,
     DEFAULT_CITY_ID,
+    HOME_CITY_ID,
+    city_to_dict,
+    distance_from_home,
     get_city,
-    search_cities,
     lookup_cma_city,
+    search_cities,
+    snow_city_ids,
+    sort_cities_for_home,
+    stargaze_city_ids,
 )
 from ..models.schemas import CityInfo
 from ..services import (
+    air_quality,
+    cache,
     cma,
     ensemble,
+    events,
     open_meteo,
+    snow,
     stargazing,
     typhoon,
-    air_quality,
 )
 
 router = APIRouter(prefix="/api")
@@ -35,10 +44,10 @@ def _today_str() -> str:
 
 def _resolve_city(
     city_id: str,
-    lat: Optional[float],
-    lon: Optional[float],
-    elevation: Optional[int],
-    station_id: Optional[str] = None,
+    lat: float | None,
+    lon: float | None,
+    elevation: int | None,
+    station_id: str | None = None,
 ):
     """支持预设城市、自定义坐标（city_id='custom'）、按名称搜索的城市。"""
     
@@ -111,20 +120,41 @@ def _envelope(city: CityInfo, data, sources: list[str], confidence: str = "中",
 # 城市列表
 # ---------------------------------------------------------------------------
 @router.get("/cities")
-def list_cities():
-    out = []
-    for c in CITIES.values():
-        out.append({
-            "id": c.id,
-            "name": c.name,
-            "latitude": c.latitude,
-            "longitude": c.longitude,
-            "elevation_m": c.elevation_m,
-            "cma_station_id": c.cma_station_id,
-            "desc": c.desc,
-            "tags": c.tags,
-        })
-    return {"cities": out, "default": DEFAULT_CITY_ID}
+def list_cities(mode: str = Query("all", description="模式：stargazing/snow/all")):
+    """城市列表。
+
+    - mode=stargazing：观星模式分组（华东近沪优先）
+    - mode=snow：赏雪模式分组（雪景城市）
+    - mode=all：全部城市，按离上海距离升序
+    """
+    if mode == "snow":
+        ordered_ids = sort_cities_for_home(snow_city_ids())
+        out = [city_to_dict(CITIES[cid]) for cid in ordered_ids if cid in CITIES]
+        # 统一按距上海由近及远排序，不做地域分区
+        groups = [{"name": "距上海由近及远", "icon": "📍", "cities": out}]
+        return {
+            "cities": out,
+            "groups": groups,
+            "default": "weihai",
+            "home_city": HOME_CITY_ID,
+            "mode": mode,
+        }
+    if mode == "stargazing":
+        ordered_ids = sort_cities_for_home(stargaze_city_ids())
+        out = [city_to_dict(CITIES[cid]) for cid in ordered_ids if cid in CITIES]
+        # 统一按距上海由近及远排序，不做地域分区
+        groups = [{"name": "距上海由近及远", "icon": "📍", "cities": out}]
+        return {
+            "cities": out,
+            "groups": groups,
+            "default": "anji",
+            "home_city": HOME_CITY_ID,
+            "mode": mode,
+        }
+    # all：保持旧行为但按上海距离排序（新增 distance_km 字段）
+    ordered_ids = sort_cities_for_home(list(CITIES.keys()))
+    out = [city_to_dict(CITIES[cid]) for cid in ordered_ids if cid in CITIES]
+    return {"cities": out, "default": DEFAULT_CITY_ID, "home_city": HOME_CITY_ID, "mode": "all"}
 
 
 # ---------------------------------------------------------------------------
@@ -228,11 +258,11 @@ def resolve_city(
 @router.get("/weather/{city_id}/now")
 async def weather_now(
     city_id: str,
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    elevation: Optional[int] = Query(None),
-    station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
-    date: Optional[str] = Query(None, description="YYYY-MM-DD，默认今天"),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
+    date: str | None = Query(None, description="YYYY-MM-DD，默认今天"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     target = date or _today_str()
@@ -381,10 +411,10 @@ async def weather_now(
 @router.get("/weather/{city_id}/forecast")
 async def weather_forecast(
     city_id: str,
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    elevation: Optional[int] = Query(None),
-    station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     sources, stale = [], False
@@ -463,11 +493,11 @@ async def weather_forecast(
 @router.get("/weather/{city_id}/hourly")
 async def weather_hourly(
     city_id: str,
-    date: Optional[str] = Query(None, description="YYYY-MM-DD，默认今天"),
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    elevation: Optional[int] = Query(None),
-    station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
+    date: str | None = Query(None, description="YYYY-MM-DD，默认今天"),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     target = date or _today_str()
@@ -545,11 +575,11 @@ async def weather_hourly(
 @router.get("/weather/{city_id}/multimodel")
 async def weather_multimodel(
     city_id: str,
-    date: Optional[str] = Query(None),
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    elevation: Optional[int] = Query(None),
-    station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
+    date: str | None = Query(None),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     target = date or _today_str()
@@ -565,14 +595,32 @@ async def weather_multimodel(
 # ---------------------------------------------------------------------------
 # 观星
 # ---------------------------------------------------------------------------
+@router.get("/stargazing/board")
+async def stargazing_board(days: int = Query(7, ge=1, le=16, description="预报天数")):
+    """观星看板：全国观星地未来 N 天晴夜聚合 + 动态窗口期推荐（结构与赏雪看板对齐）。"""
+    try:
+        data = await stargazing.build_stargazing_board(days)
+    except Exception as e:
+        raise HTTPException(502, f"观星看板生成失败: {e}")
+    return {
+        "data": data,
+        "meta": {
+            "sources": ["Open-Meteo"],
+            "updated_at": data.get("generated_at"),
+            "confidence": "中",
+            "stale": False,
+        },
+    }
+
+
 @router.get("/stargazing/{city_id}")
 async def stargazing_score(
     city_id: str,
-    date: Optional[str] = Query(None),
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    elevation: Optional[int] = Query(None),
-    station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
+    date: str | None = Query(None),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     target = date or _today_str()
@@ -585,17 +633,37 @@ async def stargazing_score(
     return _envelope(city, data, ["ECMWF", "Open-Meteo-Astronomy", "AirQuality"], "中")
 
 
+@router.get("/stargazing/forecast/{city_id}")
+async def stargazing_forecast(
+    city_id: str,
+    days: int = Query(15, ge=1, le=16, description="预报天数，最长 16 天"),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
+):
+    """单城市未来 N 天观星条件摘要（每日一条，供详情页展示）。"""
+    city = _resolve_city(city_id, lat, lon, elevation, station_id)
+    try:
+        data = await stargazing.build_stargazing_forecast(
+            city.latitude, city.longitude, city.elevation_m, days
+        )
+    except Exception as e:
+        raise HTTPException(502, f"观星多日预报失败: {e}")
+    return _envelope(city, data, ["ECMWF", "Open-Meteo-Astronomy", "AirQuality"], "中")
+
+
 # ---------------------------------------------------------------------------
 # 天文
 # ---------------------------------------------------------------------------
 @router.get("/astronomy/{city_id}")
 async def astronomy(
     city_id: str,
-    date: Optional[str] = Query(None),
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    elevation: Optional[int] = Query(None),
-    station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
+    date: str | None = Query(None),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     target = date or _today_str()
@@ -630,11 +698,11 @@ async def astronomy(
 @router.get("/air-quality/{city_id}")
 async def get_air_quality_endpoint(
     city_id: str,
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    elevation: Optional[int] = Query(None),
-    station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
-    date: Optional[str] = Query(None, description="YYYY-MM-DD，默认今天"),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
+    date: str | None = Query(None, description="YYYY-MM-DD，默认今天"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     try:
@@ -651,10 +719,10 @@ async def get_air_quality_endpoint(
 async def historical(
     city_id: str,
     month_day: str = Query(..., description="MM-DD，如 08-15"),
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    elevation: Optional[int] = Query(None),
-    station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     today = date.today()
@@ -689,11 +757,11 @@ async def historical(
 @router.get("/analysis/{city_id}")
 async def analysis(
     city_id: str,
-    date: Optional[str] = Query(None),
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    elevation: Optional[int] = Query(None),
-    station_id: Optional[str] = Query(None, description="CMA 站号（可选）"),
+    date: str | None = Query(None),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+    station_id: str | None = Query(None, description="CMA 站号（可选）"),
 ):
     city = _resolve_city(city_id, lat, lon, elevation, station_id)
     target = date or _today_str()
@@ -709,17 +777,177 @@ async def analysis(
 # ---------------------------------------------------------------------------
 # 健康检查
 # ---------------------------------------------------------------------------
+@router.get("/snow/board")
+async def snow_board(days: int = Query(7, ge=1, le=16, description="预报天数")):
+    """赏雪看板：全国雪景城市未来 N 天降雪概率聚合 + 每日播报。"""
+    try:
+        data = await snow.build_board(days)
+    except Exception as e:
+        raise HTTPException(502, f"赏雪看板生成失败: {e}")
+    return {
+        "data": data,
+        "meta": {
+            "sources": ["Open-Meteo"],
+            "updated_at": data.get("generated_at"),
+            "confidence": "中",
+            "stale": False,
+        },
+    }
+
+
+@router.get("/snow/forecast/{city_id}")
+async def snow_forecast(
+    city_id: str,
+    days: int = Query(7, ge=1, le=16, description="预报天数"),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    elevation: int | None = Query(None),
+):
+    """单城市雪况预报：逐日降雪概率/评分/因子。"""
+    # 自定义坐标走临时城市注册
+    if city_id == "custom" and lat is not None and lon is not None:
+        from ..config import City
+        cid = f"custom_{lat:.3f}_{lon:.3f}"
+        if cid not in CITIES:
+            CITIES[cid] = City(cid, f"自定义({lat:.2f},{lon:.2f})", lat, lon, int(elevation or 0), None, "自定义坐标", ["自定义"])
+        city_id = cid
+    city = get_city(city_id)
+    if not city:
+        raise HTTPException(404, f"未知城市: {city_id}")
+    try:
+        data = await snow.build_city_forecast(city_id, days)
+    except Exception as e:
+        raise HTTPException(502, f"雪况预报失败: {e}")
+    city_info = CityInfo(
+        id=city.id,
+        name=city.name,
+        latitude=city.latitude,
+        longitude=city.longitude,
+        elevation_m=city.elevation_m,
+        cma_station_id=city.cma_station_id,
+    )
+    return _envelope(city_info, data, ["Open-Meteo"], "中")
+
+
+@router.get("/pinned/summary")
+async def pinned_summary(
+    ids: str = Query(..., description="逗号分隔的城市 ID（最多 10 个）"),
+    days: int = Query(7, ge=1, le=16, description="每城展示天数"),
+    mode: str = Query("snow", pattern="^(snow|stargazing)$"),
+):
+    """首屏钉住城市卡片：一次拿到多城未来 N 天的核心指标。"""
+    city_ids = [x.strip() for x in ids.split(",") if x.strip()][:10]
+    if not city_ids:
+        raise HTTPException(400, "ids 不能为空")
+
+    cache_key = f"pinned_{mode}_{days}_{'_'.join(city_ids)}"
+    cached, stale = cache.get_cache(cache_key, 1800)
+    if cached is not None and not stale:
+        return {"data": cached, "meta": {
+            "sources": ["Open-Meteo"],
+            "updated_at": cached.get("generated_at"),
+            "confidence": "中",
+            "cached": True,
+        }}
+
+    async def one(cid: str):
+        city = get_city(cid)
+        if not city:
+            return None
+        dist = round(distance_from_home(city), 1)
+        try:
+            if mode == "snow":
+                raw = await snow.build_city_forecast(cid, days)
+                items = [{
+                    "date": x["date"],
+                    "value": x["snow_probability"],
+                    "score": x["score"],
+                    "rating": x["rating"],
+                    "level": x["level"],
+                    "snowfall_cm": x["snowfall_cm"],
+                    "temp_min": x["temp_min"],
+                    "temp_max": x["temp_max"],
+                    "precip_probability": x["precip_probability"],
+                } for x in raw.get("days", [])]
+            else:
+                raw = await stargazing.build_stargazing_forecast(
+                    city.latitude, city.longitude, city.elevation_m, days
+                )
+                items = [{
+                    "date": x["date"],
+                    "value": x["score"],
+                    "score": x["score"],
+                    "rating": x["rating"],
+                    "level": x["level"],
+                    "cloud_cover": x["cloud_cover"],
+                    "moon_illumination": x["moon_illumination"],
+                    "best_window_start": x["best_window_start"],
+                    "best_window_end": x["best_window_end"],
+                } for x in raw.get("days", [])]
+            return {
+                "id": cid,
+                "name": city.name,
+                "distance_km": dist,
+                "days": items,
+                "best": raw.get("best"),
+            }
+        except Exception:
+            return {"id": cid, "name": city.name, "distance_km": dist, "days": [], "best": None}
+
+    results = await asyncio.gather(*[one(cid) for cid in city_ids])
+    data = {
+        "items": [x for x in results if x],
+        "days": days,
+        "mode": mode,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    if any(x and x.get("days") for x in results):
+        cache.set_cache(cache_key, data)
+    return {
+        "data": data,
+        "meta": {
+            "sources": ["Open-Meteo"],
+            "updated_at": data["generated_at"],
+            "confidence": "中",
+        },
+    }
+
+
+@router.get("/events")
+async def list_events(
+    mode: str = Query("stargazing", description="模式：stargazing/snow"),
+    window_days: int = Query(60, ge=1, le=180),
+):
+    """返回某模式下即将发生/正在进行的热点事件（流星雨 / 冰雪文旅）。"""
+    items = events.get_events(mode=mode, window_days=window_days)
+    return {
+        "data": {
+            "mode": mode,
+            "items": items,
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "meta": {
+            "sources": ["内置事件库"],
+            "confidence": "参考",
+        },
+    }
+
+
 @router.get("/health")
 async def health_check():
     """健康检查接口。"""
     return {
         "status": "ok",
-        "version": "2.0.0",
+        "version": "2.3.0",
+        "modes": ["stargazing", "snow"],
         "features": [
             "multi-source",
             "stargazing",
+            "snow-forecast",
+            "snow-board",
+            "hot-events",
             "light-pollution",
             "city-search",
-            "dark-light-mode",
+            "home-city-sorting",
         ],
     }

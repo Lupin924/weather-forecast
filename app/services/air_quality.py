@@ -7,14 +7,14 @@
 from __future__ import annotations
 
 from datetime import date as _date
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
 from ..config import (
+    CACHE_TTL,
     HTTP_TIMEOUT,
     OPEN_METEO_AIR,
-    CACHE_TTL,
 )
 from . import cache, light_pollution
 
@@ -37,7 +37,7 @@ def _filter_hourly_by_date(hourly: dict, target_date: str) -> dict:
     }
 
 
-async def get_air_quality(lat: float, lon: float, elevation: int = 0, target_date: Optional[str] = None) -> dict[str, Any]:
+async def get_air_quality(lat: float, lon: float, elevation: int = 0, target_date: str | None = None) -> dict[str, Any]:
     """获取指定日期的空气质量数据 + 光污染数据。
 
     空气质量来自 Open-Meteo API（获取 3 天预报，按 target_date 后端筛选）。

@@ -74,6 +74,7 @@ hiddenimports = [
     'app.services.elevation',
     'app.services.ensemble',
     'app.services.open_meteo',
+    'app.services.snow',
     'app.services.stargazing',
     'app.services.typhoon',
     'app.services.air_quality',

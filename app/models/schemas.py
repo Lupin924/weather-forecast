@@ -1,7 +1,7 @@
 """Pydantic 响应模型 —— 统一信封 + 各端点数据结构。"""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -15,7 +15,7 @@ class CityInfo(BaseModel):
     latitude: float
     longitude: float
     elevation_m: int
-    cma_station_id: Optional[str] = None
+    cma_station_id: str | None = None
 
 
 class Meta(BaseModel):
@@ -70,8 +70,8 @@ class DailyForecast(BaseModel):
     day_wind_scale: str
     night_wind_scale: str
     # Open-Meteo 补充（超出 CMA 7 天窗口时）
-    precipitation: Optional[float] = None
-    cloud_cover: Optional[float] = None
+    precipitation: float | None = None
+    cloud_cover: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -80,17 +80,17 @@ class DailyForecast(BaseModel):
 class HourlyPoint(BaseModel):
     time: str
     temperature: float
-    humidity: Optional[float] = None
-    pressure: Optional[float] = None
-    precipitation: Optional[float] = None
-    cloud_cover: Optional[float] = None
-    wind_speed: Optional[float] = None  # km/h
-    wind_direction: Optional[float] = None
-    wind_gusts: Optional[float] = None  # km/h
-    visibility: Optional[float] = None  # km
-    dew_point: Optional[float] = None
-    weather_code: Optional[int] = None
-    text: Optional[str] = None
+    humidity: float | None = None
+    pressure: float | None = None
+    precipitation: float | None = None
+    cloud_cover: float | None = None
+    wind_speed: float | None = None  # km/h
+    wind_direction: float | None = None
+    wind_gusts: float | None = None  # km/h
+    visibility: float | None = None  # km
+    dew_point: float | None = None
+    weather_code: int | None = None
+    text: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -119,20 +119,20 @@ class StargazingHour(BaseModel):
     score: float
     rating: str
     level: str
-    cloud_cover: Optional[float] = None
-    visibility: Optional[float] = None
-    humidity: Optional[float] = None
-    wind_speed: Optional[float] = None
-    wind_gusts: Optional[float] = None
-    moon_illumination: Optional[float] = None
-    moon_below_horizon: Optional[bool] = None
+    cloud_cover: float | None = None
+    visibility: float | None = None
+    humidity: float | None = None
+    wind_speed: float | None = None
+    wind_gusts: float | None = None
+    moon_illumination: float | None = None
+    moon_below_horizon: bool | None = None
     breakdown: dict[str, float] = Field(default_factory=dict)
 
 
 class StargazingResult(BaseModel):
     date: str
     hours: list[StargazingHour]
-    best_window: Optional[str] = None
+    best_window: str | None = None
     best_score: float = 0.0
     summary: str = ""
 
@@ -142,12 +142,12 @@ class StargazingResult(BaseModel):
 # ---------------------------------------------------------------------------
 class AstronomyInfo(BaseModel):
     date: str
-    sunrise: Optional[str] = None
-    sunset: Optional[str] = None
-    moonrise: Optional[str] = None
-    moonset: Optional[str] = None
-    moon_phase: Optional[float] = None
-    moon_illumination: Optional[float] = None
+    sunrise: str | None = None
+    sunset: str | None = None
+    moonrise: str | None = None
+    moonset: str | None = None
+    moon_phase: float | None = None
+    moon_illumination: float | None = None
     moon_phase_name: str = ""
 
 
@@ -174,11 +174,11 @@ class HistoricalComparison(BaseModel):
 class SystemAnalysis(BaseModel):
     date: str
     pressure_series: list[dict]  # [{"date":..,"pressure":..,"wind_speed":..,"gust":..}]
-    min_pressure: Optional[float] = None
-    min_pressure_date: Optional[str] = None
+    min_pressure: float | None = None
+    min_pressure_date: str | None = None
     system_detected: bool = False
     system_type: str = "正常"
-    peak_gust: Optional[float] = None
-    target_gust: Optional[float] = None
+    peak_gust: float | None = None
+    target_gust: float | None = None
     influence_ended: bool = True
     conclusion: str = ""

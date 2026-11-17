@@ -1,7 +1,7 @@
 """多模型集成：ECMWF vs GFS 逐日聚合 + 集成值 + 分歧度。"""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from . import open_meteo
 

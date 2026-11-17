@@ -13,15 +13,40 @@
 """
 from __future__ import annotations
 
+import asyncio
 import math
-from datetime import datetime, timedelta
-from typing import Any, Optional
+from datetime import date, datetime, timedelta
+from typing import Any
 
+from .. import config
 from ..config import STARGAZE_WEIGHTS, rating_for
-from . import open_meteo, air_quality
+from . import air_quality, cache, open_meteo
+
+# ---------------------------------------------------------------------------
+# 动态「推荐观星地」权重（与赏雪推荐对称，面向上海用户）
+# - quality   观星分：当日夜间最佳观星评分，越高越值得专程前往
+# - planning  规划窗口：留出 2~5 天提前量最佳（今明太赶、远期不确定）
+# - rarity    稀罕度：离上海越近却仍优质暗空，越稀罕（江南晴夜难得）
+# ---------------------------------------------------------------------------
+STAR_RECOMMEND_WEIGHTS = {
+    "quality": 0.46,
+    "planning": 0.30,
+    "rarity": 0.24,
+}
 
 
-def _parse_dt(s: Optional[str]) -> Optional[datetime]:
+def _star_planning_score(day_idx: int) -> float:
+    """规划窗口评分（0-1），与赏雪同一口径：2~5 天最佳。"""
+    if day_idx <= 0:
+        return 0.15
+    if day_idx == 1:
+        return 0.35
+    if day_idx <= 5:
+        return min(1.0, 0.8 + 0.05 * day_idx)
+    return max(0.45, 1.0 - 0.12 * (day_idx - 5))
+
+
+def _parse_dt(s: str | None) -> datetime | None:
     if not s:
         return None
     try:
@@ -33,9 +58,9 @@ def _parse_dt(s: Optional[str]) -> Optional[datetime]:
 # ---- 太阳高度角近似计算 ----
 def _approximate_sun_altitude(
     t: datetime,
-    sunset: Optional[datetime],
-    sunrise: Optional[datetime],
-    solar_noon: Optional[datetime] = None
+    sunset: datetime | None,
+    sunrise: datetime | None,
+    solar_noon: datetime | None = None
 ) -> float:
     """
     近似计算给定时刻的太阳高度角（度数）。
@@ -91,7 +116,7 @@ def _score_night_sky(altitude: float) -> float:
 
 
 # ---- 各维度子评分 ----
-def _score_cloud(cloud: Optional[float]) -> float:
+def _score_cloud(cloud: float | None) -> float:
     """总云量评分（兼容旧调用）"""
     if cloud is None:
         return 50.0
@@ -99,15 +124,14 @@ def _score_cloud(cloud: Optional[float]) -> float:
 
 
 def _score_cloud_by_layer(
-    cloud_total: Optional[float],
-    cloud_low: Optional[float],
-    cloud_mid: Optional[float],
-    cloud_high: Optional[float],
+    cloud_total: float | None,
+    cloud_low: float | None,
+    cloud_mid: float | None,
+    cloud_high: float | None,
 ) -> tuple[float, dict]:
     """v2.2: 按云属分级评分 (卷云/中云/低云不同处理)
     依据: 百度贴吧《天文随笔》"卷云少量不影响, 卷层云铺满放弃, 中云基本放弃, 低云完全遮挡"
     返回 (score, info_dict)"""
-    parts = {"total": cloud_total, "low": cloud_low, "mid": cloud_mid, "high": cloud_high}
     info = {}
     score = 100.0
     if cloud_high is not None and cloud_high > 80:
@@ -126,7 +150,7 @@ def _score_cloud_by_layer(
     return score, info
 
 
-def _score_lifted_index(li: Optional[float]) -> float:
+def _score_lifted_index(li: float | None) -> float:
     """v2.2: 抬升指数 LI 评分 (上海崇明 7 因子之一)
     LI < -3 → 强对流潜势 (扣 20)
     LI > 0 → 稳定大气 (加 10)
@@ -138,7 +162,7 @@ def _score_lifted_index(li: Optional[float]) -> float:
     return 75.0             # 中性
 
 
-def _score_cape(cape: Optional[float]) -> float:
+def _score_cape(cape: float | None) -> float:
     """v2.2: CAPE 对流有效位能"""
     if cape is None: return 80.0
     if cape > 1000: return 60.0  # 高对流
@@ -146,7 +170,7 @@ def _score_cape(cape: Optional[float]) -> float:
     return 90.0
 
 
-def _score_dew_depression(temp: Optional[float], dew_point: Optional[float]) -> tuple[float, str]:
+def _score_dew_depression(temp: float | None, dew_point: float | None) -> tuple[float, str]:
     """v2.2: 露点分离度评分 (设备安全)
     <2°C → 必结露 (扣 30)
     2-5°C → 风险 (扣 15)
@@ -159,7 +183,7 @@ def _score_dew_depression(temp: Optional[float], dew_point: Optional[float]) -> 
     return 90.0, f"露点分离{spread:.1f}°C安全"
 
 
-def _score_moon(illum: Optional[float], below_horizon: bool, altitude: float) -> float:
+def _score_moon(illum: float | None, below_horizon: bool, altitude: float) -> float:
     if below_horizon:
         return 100.0
     if altitude >= 0:
@@ -169,7 +193,7 @@ def _score_moon(illum: Optional[float], below_horizon: bool, altitude: float) ->
     return max(0.0, 100.0 - illum)
 
 
-def _score_precipitation(precip: Optional[float]) -> float:
+def _score_precipitation(precip: float | None) -> float:
     """降水评分：有降水时大幅扣分。"""
     if precip is None:
         return 80.0
@@ -186,7 +210,7 @@ def _score_precipitation(precip: Optional[float]) -> float:
     return 0.0
 
 
-def _score_visibility(vis_km: Optional[float]) -> float:
+def _score_visibility(vis_km: float | None) -> float:
     if vis_km is None:
         return 50.0
     if vis_km >= 20:
@@ -196,7 +220,7 @@ def _score_visibility(vis_km: Optional[float]) -> float:
     return (vis_km - 2) / (20 - 2) * 100.0
 
 
-def _score_humidity(h: Optional[float], dew_point: Optional[float] = None, temp: Optional[float] = None) -> float:
+def _score_humidity(h: float | None, dew_point: float | None = None, temp: float | None = None) -> float:
     """湿度评分：40-60% 最佳。
     ⭐ v2.2: 露点分离度已抽离到 _score_dew_depression(), 此处只评湿度本身"""
     if h is None:
@@ -210,14 +234,14 @@ def _score_humidity(h: Optional[float], dew_point: Optional[float] = None, temp:
     return max(0.0, min(100.0, base))
 
 
-def _score_wind(gust: Optional[float], wind: Optional[float]) -> float:
+def _score_wind(gust: float | None, wind: float | None) -> float:
     v = gust if gust is not None else wind
     if v is None:
         return 50.0
     return max(0.0, min(100.0, 100.0 - max(0.0, v - 5.0) * 3.5))
 
 
-def _score_light_pollution(bortle: Optional[int]) -> float:
+def _score_light_pollution(bortle: int | None) -> float:
     """根据 Bortle 等级计算光污染评分（0-100，越高越好）。
 
     Bortle 1 = 100 分（优秀暗空）
@@ -229,7 +253,7 @@ def _score_light_pollution(bortle: Optional[int]) -> float:
     return max(0.0, min(100.0, (9 - bortle) / 8 * 100))
 
 
-def _score_air_quality(aqi: Optional[float]) -> float:
+def _score_air_quality(aqi: float | None) -> float:
     if aqi is None:
         return 50.0
     if aqi <= 50:
@@ -269,7 +293,7 @@ def _find_best_window(
     min_duration: int = 2,
     max_duration: int = 8,
     min_score: float = 30.0,
-) -> Optional[tuple[str, str, float]]:
+) -> tuple[str, str, float] | None:
     """
     在夜间时段中寻找连续的最佳观测窗口。
 
@@ -332,10 +356,10 @@ def _find_best_window(
 
 # ---- 建议生成 ----
 def _generate_recommendation(
-    best_window_info: Optional[tuple[str, str, float]],
+    best_window_info: tuple[str, str, float] | None,
     night_hours: list[dict],
-    sunset: Optional[datetime],
-    sunrise: Optional[datetime],
+    sunset: datetime | None,
+    sunrise: datetime | None,
 ) -> str:
     """根据条件生成可操作的观星建议，包含趋势分析和关键影响因素。"""
     if not night_hours:
@@ -475,19 +499,40 @@ def _analyze_worst_factors(night_hours: list[dict]) -> list[str]:
 
 
 async def build_stargazing(
-    lat: float, lon: float, elevation: int, date_str: str
+    lat: float, lon: float, elevation: int, date_str: str,
+    fc: dict | None = None, air: dict | None = None,
 ) -> dict[str, Any]:
-    """构建观星评分数据。"""
-    fc = await open_meteo.get_forecast(lat, lon, elevation, forecast_days=7)
+    """构建观星评分数据。
+
+    fc/air 可由批量预报预取后传入以复用，避免 N 天预报重复请求 API。
+    """
+    if fc is None:
+        try:
+            target_date = datetime.fromisoformat(date_str).date()
+            need = (target_date - date.today()).days + 2
+        except Exception:
+            need = 7
+        fc = await open_meteo.get_forecast(
+            lat, lon, elevation, forecast_days=max(7, min(16, need))
+        )
     daily = fc["daily"]
     hourly = fc["hourly"]
 
-    try:
-        air = await air_quality.get_air_quality(lat, lon, elevation)
-        current_aqi = air.get("current", {}).get("aqi")
-        light_pollution_info = air.get("light_pollution", {})
-        bortle = light_pollution_info.get("bortle")
-    except Exception:
+    if air is None:
+        try:
+            air = await air_quality.get_air_quality(lat, lon, elevation)
+        except Exception:
+            air = None
+    if air is not None:
+        try:
+            current_aqi = air.get("current", {}).get("aqi")
+            light_pollution_info = air.get("light_pollution", {})
+            bortle = light_pollution_info.get("bortle")
+        except Exception:
+            current_aqi = None
+            bortle = None
+            light_pollution_info = {"bortle": None, "label": "未知", "score": 50.0}
+    else:
         current_aqi = None
         bortle = None
         light_pollution_info = {"bortle": None, "label": "未知", "score": 50.0}
@@ -724,3 +769,328 @@ async def build_stargazing(
             "avg_score": avg_score,
         },
     }
+
+
+async def build_stargazing_forecast(
+    lat: float, lon: float, elevation: int, days: int = 15
+) -> dict[str, Any]:
+    """未来 N 天观星条件摘要：每天一条，供钉住卡片与详情页共用。
+
+    一次取数 + 一次空气质量请求，逐日复用 build_stargazing 评分，
+    返回精简的逐日字段（不含逐小时明细，明细走 /stargazing/{city_id}?date=）。
+    """
+    days = max(1, min(16, days))
+    fc = await open_meteo.get_forecast(
+        lat, lon, elevation, forecast_days=min(days + 1, 16)
+    )
+    try:
+        air = await air_quality.get_air_quality(lat, lon, elevation)
+    except Exception:
+        air = None
+
+    out: list[dict] = []
+    for d in fc.get("daily", [])[:days]:
+        ds = str(d.get("time", ""))[:10]
+        if not ds:
+            continue
+        try:
+            sg = await build_stargazing(lat, lon, elevation, ds, fc=fc, air=air)
+        except Exception:
+            continue
+        night = [h for h in sg.get("hours", []) if not h.get("is_daytime", True)]
+        clouds = [
+            h.get("cloud_cover") for h in night
+            if h.get("cloud_cover") is not None
+        ]
+        cloud_avg = round(sum(clouds) / len(clouds)) if clouds else None
+        phase = d.get("moon_phase")
+        best_score = sg.get("best_score", 0.0)
+        rating, level = rating_for(best_score)
+        out.append({
+            "date": ds,
+            "score": best_score,
+            "rating": rating,
+            "level": level,
+            "best_window_start": sg.get("best_window_start"),
+            "best_window_end": sg.get("best_window_end"),
+            "best_window_avg": sg.get("best_window_avg"),
+            "best_window_duration": sg.get("best_window_duration"),
+            "cloud_cover": cloud_avg,
+            "weather_code": d.get("weather_code"),
+            "temp_max": round(d["temperature_2m_max"], 1) if d.get("temperature_2m_max") is not None else None,
+            "temp_min": round(d["temperature_2m_min"], 1) if d.get("temperature_2m_min") is not None else None,
+            "moon_illumination": open_meteo.moon_illumination_from_phase(phase),
+            "moon_phase": phase,
+            "moon_phase_name": open_meteo.moon_phase_name(phase),
+            "summary": sg.get("summary"),
+            "recommendation": sg.get("recommendation"),
+            "stats": sg.get("stats"),
+            "sunset": sg.get("sunset"),
+            "sunrise": sg.get("sunrise"),
+        })
+
+    return {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "days": out,
+        "best": max(out, key=lambda x: x["score"]) if out else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 动态「推荐观星地」（与赏雪推荐对称）
+# ---------------------------------------------------------------------------
+def _star_recommend_reason(name: str, score: float, lead_days: int,
+                           rarity: float, is_new: bool) -> str:
+    parts = []
+    if 2 <= lead_days <= 5:
+        parts.append(str(lead_days) + " 天后 · 宜规划行程")
+    elif lead_days >= 6:
+        parts.append(str(lead_days) + " 天后 · 提前锁定")
+    elif lead_days <= 1:
+        parts.append("晴夜临近·适合说走就走")
+    if is_new:
+        parts.append("新出现晴夜")
+    if rarity >= 0.7:
+        parts.append("近沪罕见通透夜空")
+    elif rarity >= 0.5:
+        parts.append("江南难得晴夜")
+    if score >= 85:
+        parts.append("观星条件极佳")
+    elif score >= 70:
+        parts.append("观星条件良好")
+    if not parts:
+        parts.append("综合夜空条件优越")
+    return " · ".join(parts[:3])
+
+
+def _second_star_window(days: list[dict], primary_idx: int,
+                        threshold: float = 55) -> dict | None:
+    """主观星夜之外的「第二窗口期」（另一段晴夜），仅作次要小字提示。"""
+    windows: list[dict] = []
+    cur = None
+    for i, dd in enumerate(days):
+        v = dd.get("score", 0)
+        if v >= threshold:
+            if cur is None:
+                cur = {"start": i, "end": i, "peak_i": i, "peak": v}
+            else:
+                cur["end"] = i
+                if v > cur["peak"]:
+                    cur["peak"], cur["peak_i"] = v, i
+        else:
+            if cur:
+                windows.append(cur)
+                cur = None
+    if cur:
+        windows.append(cur)
+    if not windows:
+        return None
+    primary = next((w for w in windows if w["start"] <= primary_idx <= w["end"]), None)
+    others = [w for w in windows if w is not primary]
+    if not others:
+        return None
+    others.sort(key=lambda w: (w["peak"], w["start"]), reverse=True)
+    w2 = others[0]
+    d0 = str(days[w2["start"]].get("date", ""))[:10]
+    d1 = str(days[w2["end"]].get("date", ""))[:10]
+    label = d0[5:] if d0 else "远期"
+    return {
+        "date_start": d0,
+        "date_end": d1,
+        "lead_days": w2["start"],
+        "score": round(w2["peak"]),
+        "label": label,
+        "day_label": "今天" if w2["start"] == 0 else ("明天" if w2["start"] == 1 else label),
+    }
+
+
+def build_stargazing_recommendations(by_id: dict, ids: list[str], days: int) -> list[dict]:
+    """动态推荐观星地（面向上海用户，与赏雪推荐同构）。
+
+    key 维度：观星分(quality) + 规划窗口(planning) + 稀罕度(rarity)，
+    让近沪的优质晴夜能压过常年干燥的高原，并标注「新出现晴夜」实现每日变化。
+    """
+    prev_raw, _ = cache.get_cache("stargaze_recommend_prev", 7 * 86400)
+    prev_ids = set(prev_raw.get("ids", [])) if isinstance(prev_raw, dict) else set()
+    w = STAR_RECOMMEND_WEIGHTS
+    recs: list[dict] = []
+    for cid in ids:
+        r = by_id.get(cid)
+        if not r:
+            continue
+        city = r["city"]
+        dist = city.get("distance_km") or 3000
+        day = None
+        day_idx = 99
+        best_sel = -1.0
+        for i, dd in enumerate(r.get("days", [])):
+            v = dd.get("score", 0)
+            if v < 45:  # 观星分低于 45 视为不宜专程前往
+                continue
+            sel = (v / 100.0) * 0.62 + _star_planning_score(i) * 0.38
+            if sel > best_sel:
+                best_sel, day, day_idx = sel, dd, i
+        if day is None:
+            continue
+        score = day.get("score", 0)
+        quality = min(1.0, score / 100.0)
+        planning = _star_planning_score(day_idx)
+        rarity = max(0.0, 1.0 - dist / 2200.0)
+        rec_score = round(100 * (w["quality"] * quality + w["planning"] * planning
+                                 + w["rarity"] * rarity))
+        rec_score = min(100, rec_score)
+        raw_date = day.get("date", "")
+        day_label = "今天" if day_idx == 0 else ("明天" if day_idx == 1 else str(raw_date)[5:])
+        is_new = cid not in prev_ids
+        # 逐日精简条：供首页「速览」行内展示未来数日观星条件，标注推荐日。
+        compact_days = [
+            {
+                "date": str(dd.get("date", ""))[:10],
+                "value": round(dd.get("score", 0) or 0),
+                "level": dd.get("level", ""),
+                "cloud": dd.get("cloud_cover"),
+                "weather_code": dd.get("weather_code"),
+                "temp_max": dd.get("temp_max"),
+                "temp_min": dd.get("temp_min"),
+            }
+            for dd in r.get("days", [])[:14]
+        ]
+        recs.append({
+            "id": cid,
+            "name": city.get("name", cid),
+            "distance_km": dist,
+            "tags": city.get("tags", []),
+            "recommend_score": rec_score,
+            "days": compact_days,
+            "score": round(score),
+            "rating": day.get("rating", ""),
+            "level": day.get("level", ""),
+            "cloud_cover": day.get("cloud_cover"),
+            "moon_illumination": day.get("moon_illumination"),
+            "moon_phase_name": day.get("moon_phase_name"),
+            "best_window_start": day.get("best_window_start"),
+            "best_window_end": day.get("best_window_end"),
+            "date": str(raw_date)[:10],
+            "day_label": day_label,
+            "lead_days": day_idx,
+            "is_new": is_new,
+            "reason": _star_recommend_reason(city.get("name", cid), score,
+                                             day_idx, rarity, is_new),
+            "second_window": _second_star_window(r.get("days", []), day_idx),
+        })
+    recs.sort(key=lambda x: (x["recommend_score"], x["score"]), reverse=True)
+    for i, rec in enumerate(recs):
+        rec["rank"] = i + 1
+    cache.set_cache("stargaze_recommend_prev", {"ids": [r["id"] for r in recs[:8]]})
+    return recs[:8]
+
+
+async def build_stargazing_board(days: int = 7, force: bool = False) -> dict:
+    """观星窗口期看板：聚合多城未来 N 天观星条件，生成动态推荐（结构对齐赏雪看板）。
+
+    force=True 时忽略缓存强制重算（供后台定时预热使用）。
+    """
+    key = f"stargaze_board_{days}"
+    if not force:
+        cached, stale = cache.get_cache(key, config.CACHE_TTL["board"])
+        if cached is not None and not stale:
+            return cached
+
+    ids = config.stargaze_city_ids()
+    cities = {cid: config.city_to_dict(config.CITIES[cid]) for cid in ids if cid in config.CITIES}
+
+    async def one(cid: str):
+        c = config.CITIES.get(cid)
+        if not c:
+            return None
+        try:
+            fc = await build_stargazing_forecast(c.latitude, c.longitude, c.elevation_m, days)
+            return {"city": cities[cid], "days": fc.get("days", []), "best": fc.get("best")}
+        except Exception:
+            return None
+
+    results = await asyncio.gather(*[one(cid) for cid in ids])
+    by_id = {r["city"]["id"]: r for r in results if r}
+
+    recommendations = build_stargazing_recommendations(by_id, ids, days)
+
+    # 城市按距上海由近及远排列（单组）
+    cities_out = []
+    for cid in config.sort_cities_for_home(ids):
+        r = by_id.get(cid)
+        if not r:
+            continue
+        cities_out.append({
+            "id": cid,
+            "name": r["city"]["name"],
+            "distance_km": r["city"].get("distance_km"),
+            "tags": r["city"].get("tags", []),
+            "days": r.get("days", []),
+            "best": r.get("best"),
+        })
+    groups = [{"name": "距上海由近及远", "icon": "📍", "cities": cities_out}]
+
+    # highlights：绝对观星分榜
+    all_best = []
+    for cid in ids:
+        r = by_id.get(cid)
+        if not r or not r.get("best"):
+            continue
+        all_best.append({
+            "id": cid,
+            "name": r["city"]["name"],
+            "distance_km": r["city"].get("distance_km"),
+            **r["best"],
+        })
+    all_best.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+    # 每日晴夜播报
+    by_day = []
+    for i in range(days):
+        d = (date.today() + timedelta(days=i)).isoformat()
+        label = "今天" if i == 0 else ("明天" if i == 1 else d[5:])
+        entries = []
+        for cid in ids:
+            r = by_id.get(cid)
+            if not r:
+                continue
+            for dd in r.get("days", []):
+                if dd.get("date") == d and dd.get("score", 0) >= 55:
+                    entries.append({
+                        "id": cid, "name": r["city"]["name"],
+                        "score": round(dd.get("score", 0)),
+                        "level": dd.get("level"),
+                        "cloud_cover": dd.get("cloud_cover"),
+                        "distance_km": r["city"].get("distance_km"),
+                    })
+                    break
+        entries.sort(key=lambda e: e["score"], reverse=True)
+        by_day.append({"date": d, "label": label, "cities": entries})
+
+    active_cities = len([c for c in all_best if c.get("score", 0) >= 55])
+    total_events = sum(len(day["cities"]) for day in by_day)
+    if recommendations:
+        top = recommendations[0]
+        summary = (f"未来 {days} 天，全国 {active_cities} 座观星地有上佳晴夜，"
+                   f"共 {total_events} 个城市·夜；今日推荐：{top['name']}"
+                   f"（{top['reason']}，观星分 {top['score']}）")
+    elif active_cities:
+        top = all_best[0]
+        summary = f"未来 {days} 天，全国 {active_cities} 座观星地有上佳晴夜；当前最佳：{top['name']}（观星分 {round(top.get('score',0))}）"
+    else:
+        summary = f"未来 {days} 天，监控的观星地暂无明显晴夜信号。"
+
+    result = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "days": days,
+        "total_cities": len(ids),
+        "active_cities": active_cities,
+        "total_events": total_events,
+        "summary": summary,
+        "recommendations": recommendations,
+        "highlights": all_best[:8],
+        "by_day": by_day,
+        "groups": groups,
+    }
+    cache.set_cache(key, result)
+    return result

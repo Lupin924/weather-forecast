@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ..paths import CACHE_DIR
 
@@ -14,7 +14,7 @@ def _cache_path(key: str) -> Path:
     return CACHE_DIR / f"{safe}.json"
 
 
-def get_cache(key: str, ttl: int) -> tuple[Optional[Any], bool]:
+def get_cache(key: str, ttl: int) -> tuple[Any | None, bool]:
     """读取缓存。
 
     返回 (data, stale):

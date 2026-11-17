@@ -1,11 +1,8 @@
-// API 封装：统一处理城市/日期/自定义坐标参数
+/* API 封装：统一处理城市 / 日期 / 自定义坐标 / 双模式 */
 const API = {
-  cityId: 'beijing',
+  cityId: 'anji',
   custom: null, // { lat, lon, elev }
   date: new Date().toISOString().slice(0, 10),
-  currentCity: null, // 当前选中的城市信息
-  _preloadCache: {}, // 前端预缓存：{ "YYYY-MM-DD": { now: {...}, air: {...}, ... } }
-  _preloadingDates: new Set(), // 正在预加载的日期
 
   _params(extra = {}) {
     const p = new URLSearchParams();
@@ -32,96 +29,43 @@ const API = {
     return r.json();
   },
 
-  cities() { return this._get('/cities'); },
+  cities(mode = 'all') { return this._get('/cities', { mode }); },
 
-  // 城市搜索
   async searchCities(q) {
-    const url = `/api/search/cities?q=${encodeURIComponent(q)}`;
-    const r = await fetch(url);
+    const r = await fetch(`/api/search/cities?q=${encodeURIComponent(q)}`);
     if (!r.ok) throw new Error(`搜索失败 HTTP ${r.status}`);
     return r.json();
   },
 
-  // 按名称解析城市
-  async resolveCity(name) {
-    const url = `/api/search/resolve?name=${encodeURIComponent(name)}`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`解析失败 HTTP ${r.status}`);
-    return r.json();
-  },
-
-  // 带日期参数的请求（不影响 this.date）
-  _getForDate(path, date, extra = {}) {
-    const params = { ...extra, date };
-    return this._get(path, params);
-  },
-
-  now(dateOverride) {
-    if (dateOverride) return this._getForDate(`/weather/${this.cityId}/now`, dateOverride);
-    return this._get(`/weather/${this.cityId}/now`, { date: this.date });
-  },
+  // 观星模式接口（date 可覆盖）
+  now(date) { return this._get(`/weather/${this.cityId}/now`, date ? { date } : {}); },
   forecast() { return this._get(`/weather/${this.cityId}/forecast`); },
-  hourly(dateOverride) {
-    if (dateOverride) return this._getForDate(`/weather/${this.cityId}/hourly`, dateOverride);
-    return this._get(`/weather/${this.cityId}/hourly`, { date: this.date });
+  hourly(date) { return this._get(`/weather/${this.cityId}/hourly`, date ? { date } : {}); },
+  multimodel(date) { return this._get(`/weather/${this.cityId}/multimodel`, date ? { date } : {}); },
+  stargazing(date) { return this._get(`/stargazing/${this.cityId}`, date ? { date } : {}); },
+  astronomy(date) { return this._get(`/astronomy/${this.cityId}`, date ? { date } : {}); },
+  airQuality(date) { return this._get(`/air-quality/${this.cityId}`, date ? { date } : {}); },
+  historical(date) {
+    const d = date || this.date;
+    return this._get(`/historical/${this.cityId}`, { month_day: d.slice(5) });
   },
-  multimodel(dateOverride) {
-    if (dateOverride) return this._getForDate(`/weather/${this.cityId}/multimodel`, dateOverride);
-    return this._get(`/weather/${this.cityId}/multimodel`, { date: this.date });
-  },
-  stargazing(dateOverride) {
-    if (dateOverride) return this._getForDate(`/stargazing/${this.cityId}`, dateOverride);
-    return this._get(`/stargazing/${this.cityId}`, { date: this.date });
-  },
-  astronomy(dateOverride) {
-    if (dateOverride) return this._getForDate(`/astronomy/${this.cityId}`, dateOverride);
-    return this._get(`/astronomy/${this.cityId}`, { date: this.date });
-  },
-  airQuality(dateOverride) {
-    if (dateOverride) return this._getForDate(`/air-quality/${this.cityId}`, dateOverride);
-    return this._get(`/air-quality/${this.cityId}`, { date: this.date });
-  },
-  historical(dateOverride) {
-    const d = dateOverride || this.date;
-    const md = d.slice(5); // MM-DD
-    return this._get(`/historical/${this.cityId}`, { month_day: md });
-  },
-  analysis(dateOverride) {
-    if (dateOverride) return this._getForDate(`/analysis/${this.cityId}`, dateOverride);
-    return this._get(`/analysis/${this.cityId}`, { date: this.date });
+  analysis(date) { return this._get(`/analysis/${this.cityId}`, date ? { date } : {}); },
+
+  // 赏雪模式接口
+  snowBoard(days = 7) { return this._get('/snow/board', { days }); },
+  stargazingBoard(days = 7) { return this._get('/stargazing/board', { days }); },
+  snowForecast(cityId, days = 7) {
+    return this._get(`/snow/forecast/${encodeURIComponent(cityId)}`, { days });
   },
 
-  // 预缓存指定日期的所有数据（后台静默拉取）
-  async preloadDate(date) {
-    if (this._preloadingDates.has(date)) return;
-    if (this._preloadCache[date]) return;
-    this._preloadingDates.add(date);
-    try {
-      const [now, air, hourly, sg, astro, mm, ana, hist] = await Promise.allSettled([
-        this.now(date),
-        this.airQuality(date),
-        this.hourly(date),
-        this.stargazing(date),
-        this.astronomy(date),
-        this.multimodel(date),
-        this.analysis(date),
-        this.historical(date),
-      ]);
-      this._preloadCache[date] = { now, air, hourly, sg, astro, mm, ana, hist };
-    } finally {
-      this._preloadingDates.delete(date);
-    }
+  // 双模式共用：N 天观星条件摘要 / 首屏钉住城市聚合
+  stargazingForecast(cityId, days = 15) {
+    return this._get(`/stargazing/forecast/${encodeURIComponent(cityId)}`, { days });
   },
-
-  // 获取预缓存数据（如果存在）
-  getCachedData(date) {
-    return this._preloadCache[date] || null;
+  pinnedSummary(ids, days = 7, mode = 'snow') {
+    return this._get('/pinned/summary', { ids: ids.join(','), days, mode });
   },
-
-  // 清除预缓存（切换城市时调用）
-  clearPreloadCache() {
-    this._preloadCache = {};
-    this._preloadingDates.clear();
-    this._forecastData = null;  // forecast 数据也需要清除（城市变化）
+  events(mode = 'stargazing') {
+    return this._get('/events', { mode });
   },
 };

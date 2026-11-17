@@ -5,8 +5,9 @@
 """
 from __future__ import annotations
 
+import asyncio
 import math
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -40,10 +41,14 @@ HOURLY_VARS = [
     "visibility",
     "cape",                   # ⭐ v2.2: 对流有效位能 (上海崇明指数)
     "lifted_index",           # ⭐ v2.2: 抬升指数 (上海崇明指数)
+    "precipitation_probability",  # ❄️ 降水概率（赏雪模式）
+    "snowfall",                   # ❄️ 降雪量 cm（赏雪模式）
+    "rain",                       # ❄️ 降雨量 mm（区分雨雪）
 ]
 
 # 日变量（天文 + 概要）
 DAILY_VARS = [
+    "weather_code",                   # 日级天气代码（速览逐日天气图标）
     "temperature_2m_max",
     "temperature_2m_min",
     "precipitation_sum",
@@ -54,14 +59,26 @@ DAILY_VARS = [
     "moonrise",
     "moonset",
     "moon_phase",
+    "precipitation_probability_max",  # ❄️ 日最大降水概率（赏雪模式）
+    "snowfall_sum",                   # ❄️ 日降雪总量 cm（赏雪模式）
 ]
 
 
-async def _fetch_json(url: str, params: dict) -> dict:
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-        resp = await client.get(url, params=params)
-        resp.raise_for_status()
-        return resp.json()
+async def _fetch_json(url: str, params: dict, retries: int = 2) -> dict:
+    """带轻量重试的 GET（网络抖动时最多尝试 retries 次）。"""
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            timeout = httpx.Timeout(HTTP_TIMEOUT, connect=8.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as e:  # noqa: BLE001 - 网络层统一重试
+            last = e
+            if attempt < retries - 1:
+                await asyncio.sleep(0.6)
+    raise last if last else RuntimeError("fetch failed")
 
 
 def _pair_lists(d: dict, keys: list[str]) -> list[dict]:
@@ -209,7 +226,7 @@ async def get_historical(
         raise
 
 
-def moon_phase_name(phase: Optional[float]) -> str:
+def moon_phase_name(phase: float | None) -> str:
     """Open-Meteo moon_phase ∈ [0,1)：0=新月, 0.25=上弦, 0.5=满月, 0.75=下弦。"""
     if phase is None:
         return ""
@@ -231,7 +248,7 @@ def moon_phase_name(phase: Optional[float]) -> str:
     return "残月"
 
 
-def moon_illumination_from_phase(phase: Optional[float]) -> Optional[float]:
+def moon_illumination_from_phase(phase: float | None) -> float | None:
     """由月相计算照亮比例（%）。标准公式：(1 - cos(2π·phase)) / 2。
 
     phase=0 新月 0%，0.25 上弦 50%，0.5 满月 100%，0.75 下弦 50%。
