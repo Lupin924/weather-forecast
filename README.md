@@ -124,6 +124,22 @@ python build_exe.py
 
 路径策略由 `app/paths.py` 统一处理：EXE 写同目录、Docker 写 `/app`、开发写项目根目录。
 
+### 纯静态版（`web/`，无需后端）
+
+同一套界面与算法的**浏览器直连版**：没有后端进程，评分与看板全在前端算，数据直接从 Open-Meteo 拉取（支持 CORS，无需 Key）。
+
+```bash
+python -m http.server 9999 -d web     # 打开 http://127.0.0.1:9999/
+```
+
+也可以直接双击 `web/index.html`，或把 `web/` 整个目录丢到 GitHub Pages / Netlify / Vercel / OSS 等静态托管。
+
+- ✅ 观星 / 赏雪双模式、首页、看板、15 天详情、评分与推荐算法、光污染 Bortle 数据库 —— 与原版一致
+- ❌ 无 CMA 实况与预警（无 CORS）、无卫星云图 / 台风追踪 / API 文档页
+- 缓存用 `localStorage`（首次并发拉 14~22 座城市约 3~8 秒，之后秒开）
+
+细节见 [`web/README.md`](web/README.md)。`web/js/cities.js`、`web/js/lp.js` 是生成产物，改完 `app/config.py` / `app/services/light_pollution.py` 后执行 `python tools/gen_cities_js.py && python tools/gen_lp_js.py` 重新生成。
+
 ---
 
 ## 🏗️ 架构
@@ -151,13 +167,20 @@ weather/
 │   ├── index.html             # 双模式外壳
 │   ├── css/style.css          # 浅色双主题响应式设计系统
 │   └── js/                    # api.js / charts.js(SVG) / app.js(主控)
+├── web/                        # ★ 纯静态版（浏览器直连，无需后端）
+│   ├── index.html
+│   ├── css/style.css          # 与 static/css 同源
+│   └── js/                    # cities / lp / om / scoring / events / api / charts / app
+├── tools/                      # 生成 web/js/cities.js、web/js/lp.js
 ├── cache/  logs/              # 自动生成
 ├── run.py  build.spec  build_exe.py
 ├── Dockerfile  docker-compose.yml
 └── requirements.txt
 ```
 
-**数据流**：前端 fetch → FastAPI 路由 → 服务层并发抓取外部 API（缓存优先）→ 统一信封 JSON → 前端分模式渲染。
+**数据流（后端版）**：前端 fetch → FastAPI 路由 → 服务层并发抓取外部 API（缓存优先）→ 统一信封 JSON → 前端分模式渲染。
+
+**数据流（静态版）**：浏览器 → `om.js`（直连 Open-Meteo，localStorage 缓存 + 限流）→ `scoring.js` 本地评分 → `api.js` 拼出同形状信封 → 同一套 `app.js` 渲染。
 
 ---
 
