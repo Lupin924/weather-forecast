@@ -33,6 +33,7 @@ logs/
 *预报*.md
 *预报*.txt
 _add_logs.py
+.playwright-mcp/
 
 # ==================== 本地会话/记忆（非项目内容） ====================
 .deepseek-harness/

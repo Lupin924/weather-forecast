@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#f4f8fd" />
+  <title>星野与雪国 · 旅行天气</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%236f7cf5'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/style.css?v=1" />
+</head>
+<body data-mode="stargazing">
+  <div id="progressBar" class="progress-bar"></div>
+
+  <div class="topbar">
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon" id="brandIcon">✦</div>
+      <div class="brand-text">
+        <h1>星野与雪国</h1>
+        <p>旅行天气 · 从上海出发</p>
+      </div>
+    </div>
+
+    <nav class="mode-switch" role="tablist" aria-label="模式切换">
+      <button type="button" class="mode-btn is-active" data-mode="stargazing" role="tab" aria-selected="true">
+        <span class="mode-ico">✦</span><span>观星</span>
+      </button>
+      <button type="button" class="mode-btn" data-mode="snow" role="tab" aria-selected="false">
+        <span class="mode-ico">❄</span><span>赏雪</span>
+      </button>
+    </nav>
+
+    <div class="header-note" id="headerNote">今夜哪片天空最清澈</div>
+  </header>
+
+  <div class="toolbar">
+    <div class="city-picker">
+      <button type="button" id="cityBtn" class="city-btn" aria-expanded="false">
+        <span class="pin">◉</span>
+        <span id="cityBtnName">安吉天荒坪</span>
+        <span class="dist" id="cityBtnDist">距上海 —</span>
+        <span class="caret">⌄</span>
+      </button>
+      <div id="cityPopover" class="city-popover hidden">
+        <input type="text" id="citySearch" class="city-search" placeholder="搜索城市 / 海拔…" autocomplete="off" />
+        <div id="cityGroups" class="city-groups-scroll"><div class="muted pad">加载城市…</div></div>
+      </div>
+    </div>
+
+    <div class="tool-actions">
+      <button type="button" id="homeBtn" class="icon-btn hidden" title="返回首页">
+        <span>⌂</span><span class="btn-text">首页</span>
+      </button>
+      <label class="date-field">
+        <span class="date-label">预报日</span>
+        <input type="date" id="datePicker" />
+      </label>
+      <button type="button" id="refreshBtn" class="icon-btn" title="刷新">
+        <span>↻</span><span class="btn-text">刷新</span>
+      </button>
+      <span class="home-badge" title="以上海为基准排序">⌂ 上海</span>
+    </div>
+  </div>
+  </div>
+
+  <!-- ==================== 首屏（两模式共用） ==================== -->
+  <main id="homeView" class="view is-active">
+    <section class="home-top">
+      <article class="card home-hero" id="homeHero">
+        <div class="hh-flurries" id="hhFlurries" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <div class="hh-kicker" id="homeKicker">✦ 今夜观星 · 从上海出发</div>
+        <div class="hh-city"><span id="homeCity">安吉天荒坪</span><small id="homeDist">距上海 —</small></div>
+        <div class="hh-hot" id="homeHot" hidden></div>
+        <div class="hh-badges" id="homeBadges"></div>
+        <div class="hh-metric"><b id="homeMetric">--</b><span id="homeMetricUnit">分</span></div>
+        <div class="hh-desc" id="homeDesc">正在汇总…</div>
+        <div class="hh-facts" id="homeFacts"></div>
+        <button type="button" class="hh-cta" id="homeCta">查看 15 天逐日详情 →</button>
+        <div class="hh-second" id="homeSecond" hidden></div>
+      </article>
+
+      <article class="card pinned-panel">
+        <div class="card-head"><h2>⭐ 常驻城市 <small>· 最多 3 座</small></h2></div>
+        <div id="pinnedCards" class="pinned-cards"><div class="muted">加载中…</div></div>
+        <div class="pin-tip">点卡片看 15 天 · 城市列表点 ☆ 增删</div>
+      </article>
+
+      <nav class="home-links" aria-label="快捷入口">
+        <button type="button" id="goFullBtn" class="nav-link-btn">查看完整看板 →</button>
+        <button type="button" id="goAnalysisBtn" class="nav-link-btn">深度分析 →</button>
+      </nav>
+    </section>
+
+    <section class="card glance-card">
+      <div class="card-head"><h2 id="glanceTitle">今日速览</h2><span class="tag" id="glanceTag">—</span></div>
+      <div id="glanceList" class="glance-list"><div class="muted">加载中…</div></div>
+    </section>
+  </main>
+
+  <!-- ==================== 城市 15 天详情（两模式共用） ==================== -->
+  <main id="detailView" class="view detail-view">
+    <div class="detail-bar">
+      <button type="button" id="detailBack" class="back-btn">← 首页</button>
+      <div class="detail-title"><h2 id="detailCity">—</h2><span id="detailMeta">—</span></div>
+    </div>
+    <section class="card">
+      <div class="card-head"><h2 id="detailDaysTitle">未来 15 天逐日预报</h2><span class="tag" id="detailRange">—</span></div>
+      <div id="detailDays" class="detail-days"><div class="muted">加载中…</div></div>
+    </section>
+    <section class="card accent-card" id="detailDayCard">
+      <div class="card-head"><h2 id="detailDayTitle">单日详情</h2><span class="tag" id="detailDayTag">点上方某一天</span></div>
+      <div id="detailDayBody" class="detail-day"><div class="muted">点击上方任意一天查看指标拆解</div></div>
+    </section>
+  </main>
+
+  <!-- ==================== 观星模式（次级页：深度分析） ==================== -->
+  <main id="viewStargazing" class="view">
+    <section class="hero-grid">
+      <article class="card hero-weather">
+        <div class="card-head"><h2>此刻天气</h2><span class="tag" id="sgNowDate">—</span></div>
+        <div class="now-main">
+          <div class="now-temp"><span id="nowTemp">--</span><small>°C</small></div>
+          <div class="now-side">
+            <div>体感 <b id="nowFeels">--</b>°</div>
+            <div id="nowSky" class="now-sky">获取中…</div>
+          </div>
+        </div>
+        <div class="now-grid">
+          <div><span>湿度</span><b id="nowHumidity">--</b></div>
+          <div><span>风速</span><b id="nowWind">--</b></div>
+          <div><span>降水</span><b id="nowPrecip">--</b></div>
+          <div><span>海拔</span><b id="nowElev">--</b></div>
+        </div>
+        <div id="nowAlarm" class="alarm hidden"></div>
+      </article>
+
+      <article class="card hero-score">
+        <div class="card-head"><h2>今夜观星指数</h2><span class="tag" id="sgScoreDate">—</span></div>
+        <div class="score-main">
+          <div class="score-ring" id="sgScoreRing"><span id="sgScore">--</span></div>
+          <div class="score-meta">
+            <div class="score-rating" id="sgRating">计算中…</div>
+            <div class="score-summary" id="sgSummary">综合云量、月相、光污染等 9 项条件</div>
+          </div>
+        </div>
+        <div class="window-box">
+          <div class="window-title">✧ 推荐观测窗口</div>
+          <div class="window-time" id="sgWindow">--</div>
+          <div class="window-note" id="sgRecommend">—</div>
+        </div>
+      </article>
+
+      <article class="card hero-astro">
+        <div class="card-head"><h2>天文与夜空</h2><span class="tag" id="sgAstroDate">—</span></div>
+        <div class="astro-row"><span>☀ 日落 / 日出</span><b id="astroSun">--</b></div>
+        <div class="astro-row"><span>☾ 月相</span><b id="astroMoon">--</b></div>
+        <div class="astro-row"><span>月面亮度</span><b id="astroIllum">--</b></div>
+        <div class="astro-row"><span>波特尔暗空等级</span><b id="astroBortle">--</b></div>
+        <div class="astro-tip" id="astroTip">—</div>
+      </article>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>未来 7 天</h2><span class="tag">逐日概览</span></div>
+      <div id="forecastStrip" class="forecast-strip"><div class="muted">加载中…</div></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>逐小时曲线</h2><span class="tag" id="sgHourlyDate">—</span></div>
+      <div id="hourlyChart" class="chart-box"><div class="muted">加载中…</div></div>
+      <div class="chart-legend">
+        <span><i class="ln temp"></i>气温</span><span><i class="ln cloud"></i>云量</span>
+        <span><i class="ln sg"></i>观星指数</span><span><i class="ln precip"></i>降水</span>
+      </div>
+    </section>
+
+    <section class="card accent-card">
+      <div class="card-head"><h2>观星条件时间线</h2><span class="tag" id="sgTimelineDate">—</span></div>
+      <div id="sgTimeline" class="timeline"><div class="muted">加载中…</div></div>
+      <div id="sgStats" class="stat-row"></div>
+    </section>
+
+    <details class="card more-card">
+      <summary>更多分析 <span class="summary-hint">多模型集成 · 历史同期 · 天气系统</span></summary>
+      <div class="more-grid">
+        <div><h3>📊 多模型集成</h3><div id="sgMultimodel" class="muted">加载中…</div></div>
+        <div><h3>📈 历史同期</h3><div id="sgHistorical" class="muted">加载中…</div></div>
+        <div><h3>🌀 天气系统</h3><div id="sgAnalysis" class="muted">加载中…</div></div>
+      </div>
+    </details>
+  </main>
+
+  <!-- ==================== 赏雪模式 ==================== -->
+  <main id="viewSnow" class="view">
+    <section class="snow-hero">
+      <div class="snow-hero-main">
+        <div class="snow-kicker">❄ 每日雪讯 · 自动更新</div>
+        <h2 id="snowSummary">正在汇总全国雪景城市预报…</h2>
+        <div class="snow-sub" id="snowUpdated">—</div>
+      </div>
+      <div class="snow-hero-stats">
+        <div><b id="snowActive">--</b><span>有雪城市</span></div>
+        <div><b id="snowEvents">--</b><span>城市·日</span></div>
+        <div><b id="snowTotal">--</b><span>监控城市</span></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>降雪概率看板</h2>
+        <span class="tag">未来 <span id="snowDaysLabel">7</span> 天 · 距上海由近及远</span>
+      </div>
+      <div id="snowDayTabs" class="day-tabs"></div>
+      <div id="snowRank" class="snow-rank"><div class="muted">加载中…</div></div>
+    </section>
+
+    <section class="card accent-card snow">
+      <div class="card-head"><h2>最佳赏雪窗口</h2><span class="tag">各城市未来最佳一天</span></div>
+      <div id="snowHighlights" class="highlight-grid"><div class="muted">加载中…</div></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>雪景城市 · 分区关注</h2><span class="tag">按上海距离排序</span></div>
+      <div id="snowGroups" class="snow-groups"><div class="muted">加载中…</div></div>
+    </section>
+
+    <section class="card" id="snowDetailCard">
+      <div class="card-head"><h2>城市雪况 <span id="snowDetailName" class="tag">—</span></h2><span class="tag" id="snowDetailBest">—</span></div>
+      <div id="snowDetail" class="snow-detail"><div class="muted">点击上方城市，查看逐日降雪概率</div></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>数据源：CMA 中央气象台 · Open-Meteo（ECMWF / GFS）· 空气质量 API ｜ 仅供旅行参考 · <span id="updatedAt">—</span></p>
+    <p class="footer-links">纯静态版 · 浏览器直连 Open-Meteo · 无需后端</p>
+  </footer>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/cities.js?v=1"></script>
+  <script src="js/lp.js?v=1"></script>
+  <script src="js/om.js?v=1"></script>
+  <script src="js/scoring.js?v=1"></script>
+  <script src="js/events.js?v=1"></script>
+  <script src="js/api.js?v=1"></script>
+  <script src="js/charts.js?v=1"></script>
+  <script src="js/app.js?v=1"></script>
+</body>
+</html>
