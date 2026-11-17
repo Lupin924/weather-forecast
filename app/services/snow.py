@@ -13,10 +13,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime, timedelta
 
 from .. import config
 from . import cache, open_meteo
+
+logger = logging.getLogger(__name__)
 
 # WMO weather_code 中属于降雪的代码
 SNOW_CODES = {71, 73, 75, 77, 85, 86, 68, 69}
@@ -231,6 +234,7 @@ async def _city_snow(city_id: str, days: int) -> dict | None:
         cache.set_cache(key, result)
         return result
     except Exception as e:
+        logger.warning("赏雪单城失败 %s: %s: %s", city_id, type(e).__name__, e)
         if cached is not None:
             return cached
         return {
@@ -418,7 +422,12 @@ async def build_board(days: int = config.SNOW_BOARD_DAYS, force: bool = False) -
     if not force:
         cached, stale = cache.get_cache(key, config.CACHE_TTL["board"])
         if cached is not None and not stale:
-            return cached
+            # 城市都在但全无 days，说明当时上游不可用，按未命中处理并重算
+            groups = cached.get("groups") or []
+            cities = (groups[0].get("cities") if groups else []) or []
+            if any(c.get("days") for c in cities):
+                return cached
+            logger.warning("赏雪看板缓存无城市数据，忽略并重算 days=%s", days)
 
     ids = config.snow_city_ids()
     results = await asyncio.gather(*[_city_snow(cid, days) for cid in ids])
@@ -512,5 +521,10 @@ async def build_board(days: int = config.SNOW_BOARD_DAYS, force: bool = False) -
         "by_day": by_day,
         "groups": groups,
     }
-    cache.set_cache(key, result)
+    # 全部城市都没拿到逐日数据，说明上游整体不可用：不写缓存，避免 TTL 内
+    # 一直返回「暂无雪景信号」。真正没雪时 cities_out 里的城市仍带 days 列表。
+    if any(c.get("days") for c in cities_out):
+        cache.set_cache(key, result)
+    else:
+        logger.warning("赏雪看板无任何城市数据，跳过缓存写入 days=%s", days)
     return result

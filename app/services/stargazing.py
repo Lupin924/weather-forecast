@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -21,6 +22,8 @@ from typing import Any
 from .. import config
 from ..config import STARGAZE_WEIGHTS, rating_for
 from . import air_quality, cache, open_meteo
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # 动态「推荐观星地」权重（与赏雪推荐对称，面向上海用户）
@@ -994,7 +997,11 @@ async def build_stargazing_board(days: int = 7, force: bool = False) -> dict:
     if not force:
         cached, stale = cache.get_cache(key, config.CACHE_TTL["board"])
         if cached is not None and not stale:
-            return cached
+            # 空缓存（一个城市都没聚合到）是上游故障留下的，按未命中处理并重算
+            groups = cached.get("groups") or []
+            if groups and (groups[0].get("cities") or []):
+                return cached
+            logger.warning("观星看板缓存无城市数据，忽略并重算 days=%s", days)
 
     ids = config.stargaze_city_ids()
     cities = {cid: config.city_to_dict(config.CITIES[cid]) for cid in ids if cid in config.CITIES}
@@ -1006,7 +1013,10 @@ async def build_stargazing_board(days: int = 7, force: bool = False) -> dict:
         try:
             fc = await build_stargazing_forecast(c.latitude, c.longitude, c.elevation_m, days)
             return {"city": cities[cid], "days": fc.get("days", []), "best": fc.get("best")}
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - 单城失败不应拖垮整块看板
+            logger.warning(
+                "观星看板单城失败 %s: %s: %s", cid, type(exc).__name__, exc
+            )
             return None
 
     results = await asyncio.gather(*[one(cid) for cid in ids])
@@ -1092,5 +1102,10 @@ async def build_stargazing_board(days: int = 7, force: bool = False) -> dict:
         "by_day": by_day,
         "groups": groups,
     }
-    cache.set_cache(key, result)
+    # 一个城市都没取到说明上游整体不可用，此时不能把空结果写进缓存——
+    # 否则 TTL 内所有请求都会拿到「暂无晴夜信号」，看起来像服务坏了。
+    if cities_out:
+        cache.set_cache(key, result)
+    else:
+        logger.warning("观星看板无任何城市数据，跳过缓存写入 days=%s", days)
     return result
