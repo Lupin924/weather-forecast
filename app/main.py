@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="星野与雪国 · 双模式旅行天气预报",
     description="观星模式（全国暗夜条件评分）与赏雪模式（雪景城市降雪概率看板）；聚合 CMA + ECMWF + GFS 三源气象数据，默认以上海为基准排序。",
-    version="2.2.0",
+    version="2.3.0",
     lifespan=lifespan,
 )
 

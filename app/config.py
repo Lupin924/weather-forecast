@@ -354,6 +354,11 @@ OPEN_METEO_GFS = "https://api.open-meteo.com/v1/gfs"
 OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 OPEN_METEO_AIR = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
+# 国家卫星气象中心（NSMC）风云四号（FY-4B）真彩云图（国内可稳定访问 / 免密钥）
+NSMC_FY4_CHINA_XML = (
+    "http://img.nsmc.org.cn/CLOUDIMAGE/FY4B/AGRI/GCLR/SEC/xml/FY4B-china-72h.xml"
+)
+
 HTTP_TIMEOUT = 15.0  # 单次请求超时（秒）
 
 
@@ -403,6 +408,7 @@ CACHE_TTL = {
     "air_quality": 1800,  # 30 分钟
     "snow": 3600,         # ❄️ 赏雪单城预报 1 小时
     "board": 3600,        # ❄️ 赏雪看板 1 小时
+    "satellite": 600,  # 10 分钟（卫星云图 URL 列表）
 }
 
 

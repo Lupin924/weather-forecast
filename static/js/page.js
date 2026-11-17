@@ -89,21 +89,20 @@
     }
   }
 
-  // 初始化主题切换（从 localStorage 读取）
+  // 初始化主题切换（从 localStorage 读取，与主页保持同一套 key / class）
   function initTheme() {
-    const saved = localStorage.getItem('weather-theme');
+    const saved = localStorage.getItem('theme');
     if (saved === 'light') {
-      document.body.classList.add('light');
+      document.body.classList.add('light-theme');
     }
     const btn = document.getElementById('themeToggle');
     if (btn) {
       btn.addEventListener('click', () => {
-        document.body.classList.toggle('light');
-        const mode = document.body.classList.contains('light') ? 'light' : 'dark';
-        localStorage.setItem('weather-theme', mode);
-        btn.textContent = mode === 'light' ? '☀️' : '🌙';
+        const isLight = document.body.classList.toggle('light-theme');
+        localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        btn.textContent = isLight ? '☀️' : '🌙';
       });
-      btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
+      btn.textContent = document.body.classList.contains('light-theme') ? '☀️' : '🌙';
     }
   }
 
@@ -121,12 +120,15 @@
     }
   }
 
-  // 城市搜索（简化版，可选）
+  // 城市搜索：预设城市 + CMA + Open-Meteo 地理编码兜底（任意大城市/地名）
   function initSearch() {
     const input = document.getElementById('citySearch');
     const results = document.getElementById('searchResults');
     if (!input || !results) return;
     let timer = null;
+    const sourceLabel = (s) =>
+      s === 'cma' ? 'CMA城市' : (s === 'geocode' ? '地理编码' : '预设城市');
+
     input.addEventListener('input', () => {
       clearTimeout(timer);
       const q = input.value.trim();
@@ -137,28 +139,53 @@
       timer = setTimeout(async () => {
         try {
           const r = await API.searchCities(q);
-          const items = (r.results || []).slice(0, 8);
+          // 统一合并三种来源为候选列表
+          const items = [];
+          (r.preset || []).slice(0, 5).forEach(c => items.push({ ...c, source: 'preset' }));
+          if (r.cma_match) items.push({ ...r.cma_match, source: 'cma' });
+          (r.geocode || []).slice(0, 5).forEach(c => items.push({ ...c, source: 'geocode' }));
+
           if (items.length === 0) {
             results.innerHTML = '<div class="no-results">未找到匹配城市</div>';
           } else {
             results.innerHTML = items.map(c =>
-              '<div class="result-item" data-id="' + c.id + '">' +
-              escapeHtml(c.name) + ' <span class="region">' + escapeHtml(c.region || '') + '</span>' +
+              '<div class="result-item" data-id="' + c.id + '"' +
+              ' data-lat="' + (c.latitude != null ? c.latitude : '') + '"' +
+              ' data-lon="' + (c.longitude != null ? c.longitude : '') + '"' +
+              ' data-elev="' + (c.elevation_m || 0) + '"' +
+              ' data-source="' + (c.source || '') + '"' +
+              ' data-name="' + encodeURIComponent(c.name || '') + '">' +
+              escapeHtml(c.name) + ' <span class="region">' + sourceLabel(c.source) +
+              (c.desc ? ' · ' + escapeHtml(c.desc) : '') + '</span>' +
               '</div>'
             ).join('');
-            // 点击选项
+            // 点击选项：preset 取完整对象；cma/geocode 用候选里的经纬度
             results.querySelectorAll('.result-item').forEach(item => {
               item.addEventListener('click', () => {
-                const cityId = item.dataset.id;
-                const city = (API._cities || []).find(c => c.id === cityId) || items.find(c => c.id === cityId);
-                if (city) {
-                  API.currentCity = city;
-                  updateCityInfo(city);
-                  refreshCurrentView();
-                  // 同步下拉框
-                  const sel = document.getElementById('citySelect');
-                  if (sel) sel.value = cityId;
+                const id = item.dataset.id;
+                const lat = parseFloat(item.dataset.lat);
+                const lon = parseFloat(item.dataset.lon);
+                const elev = parseInt(item.dataset.elev) || 0;
+                const presetCity = (API._cities || []).find(c => c.id === id);
+                const city = presetCity || {
+                  id,
+                  name: decodeURIComponent(item.dataset.name),
+                  latitude: lat,
+                  longitude: lon,
+                  elevation_m: elev,
+                };
+                if (!isNaN(lat) && !isNaN(lon)) {
+                  city.latitude = lat;
+                  city.longitude = lon;
+                  city.elevation_m = elev;
                 }
+                if (!city) return;
+                API.currentCity = city;
+                updateCityInfo(city);
+                refreshCurrentView();
+                // 只有预设城市能在下拉框中选中
+                const sel = document.getElementById('citySelect');
+                if (sel) sel.value = presetCity ? id : '';
                 input.value = '';
                 results.classList.add('hidden');
               });

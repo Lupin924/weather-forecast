@@ -57,6 +57,9 @@ const API = {
   snowForecast(cityId, days = 7) {
     return this._get(`/snow/forecast/${encodeURIComponent(cityId)}`, { days });
   },
+  satelliteFY4(region = 'china') {
+    return this._get('/satellite/fy4', { region });
+  },
 
   // 双模式共用：N 天观星条件摘要 / 首屏钉住城市聚合
   stargazingForecast(cityId, days = 15) {

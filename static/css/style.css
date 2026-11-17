@@ -776,3 +776,270 @@ body[data-mode="snow"] .gr-pill.lv-high { background: #e3f2fb; color: #2b83b8; }
   .detail-days { grid-template-columns: 1fr !important; }
 }
 
+
+
+/* ============================================================
+ * 卫星云图 / 独立页面样式（合并自 origin/main，供
+ * satellite.html / typhoon.html / 卫星卡片使用）
+ * ============================================================ */
+
+.satellite-wrap {
+  min-height: min(72vh, 720px);
+}
+
+.windy-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg-secondary, #1a1d2e);
+}
+
+/* ============================================
+ * FY-4B 卫星云图渲染（satellite.js）
+ * 说明：Windy iframe 已被替换为国家卫星气象中心 FY-4B 真彩云图
+ * ============================================ */
+
+.fy4-stage,
+.fy4-loading,
+.fy4-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.fy4-stage {
+  flex-direction: column;
+  background: #0b0e14; /* 云图深色基底，避免露白 */
+}
+
+.fy4-stage img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* 铺满整个宽屏(16:9)窗格，无留边、无"小卡片"观感 */
+  background: #0b0e14;
+}
+
+/* 信息胶囊（地图叠加层，始终用深色底以在图上保持可读） */
+.fy4-chip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #e6edf3;
+  background: rgba(13, 17, 23, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.fy4-loc {
+  top: auto;
+  bottom: 10px;
+  left: 10px;
+}
+
+.fy4-credit {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  font-size: 11px;
+  color: rgba(230, 237, 243, 0.72);
+  background: rgba(13, 17, 23, 0.6);
+  padding: 3px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+/* 台风页：官方路径入口 */
+.fy4-typhoon-link {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--accent, #58a6ff);
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+  transition: opacity 0.18s ease;
+}
+
+.fy4-typhoon-link:hover {
+  opacity: 0.88;
+}
+
+.fy4-loading {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--bg-secondary, #1a1d2e);
+}
+
+.fy4-error {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  background: var(--bg-secondary, #1a1d2e);
+}
+
+.retry-link {
+  font-size: 12px;
+  color: var(--accent, #58a6ff);
+  text-decoration: none;
+}
+
+.retry-link:hover {
+  text-decoration: underline;
+}
+
+/* ============================================
+ * 独立页面（satellite.html / typhoon.html）布局
+ * ============================================ */
+
+.standalone-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* 锁定一屏，让云图窗格铺满视口（适配主流 16:9 显示器） */
+  overflow: hidden;
+}
+
+.standalone-topbar {
+  flex: 0 0 auto;
+}
+
+/* 独立页顶栏更紧凑，把更多空间让给云图 */
+.standalone-page .topbar {
+  padding: 8px 14px;
+  gap: 6px;
+}
+
+.standalone-page .topbar .brand {
+  gap: 8px;
+}
+
+.standalone-page .brand h1 {
+  font-size: 16px;
+}
+
+.standalone-page .topbar .brand .logo {
+  font-size: 22px;
+}
+
+.standalone-controls {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.standalone-controls a {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.standalone-controls a.active {
+  background: var(--accent, #5c9eff);
+  border-color: var(--accent, #5c9eff);
+  color: #fff;
+}
+
+.standalone-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;   /* 覆盖全局 main 的 max-width:1400px，云图全宽铺满，消除两侧空白 */
+  margin: 0;         /* 覆盖全局 main 的 margin:0 auto 居中 */
+  padding: 6px 8px 8px; /* 极窄边距，云图尽量铺满 */
+  min-height: 0;
+}
+
+.standalone-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: none; /* 去掉卡片底色/边框，不再框成 1:1 卡片 */
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0 4px;
+  min-height: 0;
+}
+
+.standalone-card.satellite-card-standalone,
+.standalone-card.typhoon-card-standalone {
+  /* \u72ec\u7acb\u9875\u9762\u9ed8\u8ba4\u53d6\u6d88 .card \u80cc\u666f\uff0c\u4f7f\u7528 standalone-card */
+}
+
+.standalone-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px; /* 更紧凑的头部 */
+}
+
+.standalone-head h2 {
+  margin: 0;
+  font-size: 16px;
+  flex: 0 0 auto;
+}
+
+.standalone-head .overlay-tabs {
+  flex: 1;
+  justify-content: flex-start;
+}
+
+.city-info {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  background: var(--bg-secondary, rgba(255,255,255,0.04));
+  border-radius: 6px;
+  flex: 0 0 auto;
+}
+
+.city-info strong {
+  color: var(--text);
+}
+
+.city-info .coord {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--accent, #5c9eff);
+}
+
+.standalone-wrap {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0; /* 铺满顶部栏以下全部剩余空间，随页面自适应 */
+  background: var(--bg-secondary, #1a1d2e);
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.standalone-wrap iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}

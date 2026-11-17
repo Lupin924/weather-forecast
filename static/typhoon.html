@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>&#x53f0;&#x98ce;&#x9884;&#x8b66;&#x8ffd;&#x8e2a; &#xb7; &#x5929;&#x6c14;&#x4e0e;&#x89c2;&#x661f;&#x9884;&#x62a5;&#x7cfb;&#x7edf;</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=22" />
+  <link rel="stylesheet" href="/static/css/style.css?v=27" />
 </head>
 <body class="standalone-page">
   <header class="topbar standalone-topbar">
@@ -38,27 +38,25 @@
     <section class="standalone-card typhoon-card-standalone" id="typhoonCard">
       <div class="standalone-head">
         <h2>&#x1f300; &#x53f0;&#x98ce;&#x9884;&#x8b66;&#x8ffd;&#x8e2a;</h2>
-        <div class="overlay-tabs" id="typhoonTabs">
-          <button class="tab active" data-zoom="3" data-lat="20" data-lon="130">&#x1f5fa;&#xfe0f; &#x897f;&#x592a;&#x5e73;&#x6d0b;&#x5168;&#x5883;</button>
-          <button class="tab" data-zoom="4" data-lat="22" data-lon="125">&#x1f310; &#x4e1c;&#x5357;&#x4e9a;&#x6d77;&#x57df;</button>
-          <button class="tab" data-zoom="5" data-lat="25" data-lon="120">&#x1f4cd; &#x4e2d;&#x56fd;&#x8fd1;&#x6d77;</button>
-          <button class="tab" id="typhoonLocateBtn" title="&#x805a;&#x7126;&#x5f53;&#x524d;&#x57ce;&#x5e02;">&#x1f4cd; &#x805a;&#x7126;&#x672c;&#x5730;</button>
+        <div class="overlay-tabs sat-provider-group" id="satProviderGroup" title="&#x9009;&#x62e9;&#x536b;&#x661f;&#x4e91;&#x56fe;&#x670d;&#x52a1;&#x5546;&#xff1b;&#x5982;&#x65e0;&#x6cd5;&#x770b;&#x5230;&#x56fe;&#x50cf;&#xff0c;&#x8bf7;&#x5207;&#x6362;&#x4e3a; NSMC">
+          <button class="tab active" data-provider="windy">&#x1f310; Windy</button>
+          <button class="tab" data-provider="nsmc">&#x1f6f0;&#xfe0f; NSMC</button>
         </div>
         <div class="city-info" id="cityInfo">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
       </div>
       <div id="typhoonBody" class="satellite-wrap standalone-wrap placeholder">&#x52a0;&#x8f7d;&#x4e2d;&#x2026;</div>
       <div class="meta-row typhoon-meta">
-        <span class="data-source">&#x6570;&#x636e;&#x6e90;&#xff1a;NHC &#xb7; JMA &#xb7; ECMWF</span>
-        <span class="update-tip">&#x53f0;&#x98ce;&#x5b63;&#x8bf7;&#x5173;&#x6ce8;&#x5b9e;&#x65f6;&#x8def;&#x5f84;&#x4e0e;&#x5f3a;&#x5ea6;</span>
+        <span class="data-source">&#x6570;&#x636e;&#x6e90;&#xff1a;Windy.com &#xb7; &#x56fd;&#x5bb6;&#x536b;&#x661f;&#x6c14;&#x8c61;&#x4e2d;&#x5fc3;(&#x98ce;&#x4e91;&#x56db;&#x53f7;B)</span>
+        <span class="update-tip">&#x1f4a1; Windy &#x9700;&#x8de8;&#x5883;&#x8bbf;&#x95ee;&#xff0c;&#x82e5;&#x65e0;&#x6cd5;&#x770b;&#x5230;&#x56fe;&#x50cf;&#xff0c;&#x8bf7;&#x5207;&#x6362;&#x4e3a; NSMC&#xff08;&#x56fd;&#x5185;&#x76f4;&#x8fde;&#xff09;</span>
       </div>
     </section>
   </main>
   <footer>
-    <p>&#x6570;&#x636e;&#x6e90;&#xff1a;CMA &#x4e2d;&#x592e;&#x6c14;&#x8c61;&#x53f0; &#xb7; Open-Meteo (ECMWF/GFS) &#xb7; Windy.com &#xb7; &#x4ec5;&#x4f9b;&#x975e;&#x5546;&#x7528;</p>
+    <p>&#x4e91;&#x56fe;&#x6765;&#x6e90;&#xff1a;&#x56fd;&#x5bb6;&#x536b;&#x661f;&#x6c14;&#x8c61;&#x4e2d;&#x5fc3;&#xff08;NSMC&#xff09; &#xb7; Windy.com &#xb7; &#x4ec5;&#x4f9b;&#x975e;&#x5546;&#x7528;</p>
   </footer>
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/js/api.js?v=22"></script>
-  <script src="/static/js/satellite.js?v=22"></script>
-  <script src="/static/js/page.js?v=22"></script>
+  <script src="/static/js/api.js?v=27"></script>
+  <script src="/static/js/satellite.js?v=27"></script>
+  <script src="/static/js/page.js?v=27"></script>
 </body>
 </html>
